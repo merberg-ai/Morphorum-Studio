@@ -71,3 +71,9 @@ Do **not** copy backend Python inference packages or its browser UI into this re
 ## License
 
 [The Unlicense](LICENSE).
+
+## Developer lifecycle shortcuts (S1.1 feature branch)
+
+On Windows use `.\setup.ps1` once, `.\run.ps1` to open Studio, and `.\update.ps1` to fast-forward the current branch and refresh dependencies. On Linux use `bash setup.sh`, `bash run.sh`, and `bash update.sh`. These scripts install/launch/update **Studio only**, never the Morphorum GPU backend. They do not switch branches or wipe local changes.
+
+S1.1 also adds a tested discovery API client, but the GUI has **no live connection panel yet** and correctly remains offline. See [S1 foundation](docs/S1_FOUNDATION.md).

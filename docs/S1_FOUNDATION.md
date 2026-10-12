@@ -32,3 +32,14 @@ For developer tests, install `-e ".[dev]"` into the virtualenv and run `python -
 **Important:** The transport is synchronous, so it is deliberately **not invoked from the Qt UI thread**. The GUI still shows BACKEND OFFLINE. S1.2 adds secure keyring storage, named profiles, host identity approval and cancellable Qt worker/UI binding. A real bearer token must not be committed or placed into scripts, logs, query strings or test fixtures. Plain HTTP is appropriate only on a trusted LAN or secure tunnel.
 
 This milestone is a foundation, not a claim of live Studio-to-backend connection acceptance. Stop for Windows physical smoke tests and CI review before merging.
+
+## Importing a backend-issued token (S1.2)
+
+1. On the GPU backend host, open PowerShell in its checkout and issue a revocable per-client token:
+   `.\\.venv\\Scripts\\python.exe -m morphorum clients issue "Studio PC" --days 90 --out ".\\data\\studio-client.token"`
+2. Securely transfer the resulting file to the **Studio PC** via removable drive or authenticated encrypted transfer. Do not send the credential to an HTTP endpoint, commit it to GitHub or paste it into chat.
+3. In Studio > Connections, create and **Save profile**, check the trusted-HTTP acknowledgment if using plain HTTP on a trusted LAN, click **Import Token File…**, select the transferred file, then **Connect / Test**.
+4. Studio stores the token through the OS credential manager. The transfer file is left untouched so deletion is an explicit user action; remove temporary copies after verifying connectivity.
+5. Revoke an old client credential on the backend host via `python -m morphorum clients list` and `python -m morphorum clients revoke CLIENT_ID`.
+
+This is local file import, **not remote pairing or automatic backend-host retrieval**. Importing does not change the backend or bypass authentication.

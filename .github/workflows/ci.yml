@@ -20,6 +20,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install Linux Qt runtime libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libegl1 libopengl0 libxcb-cursor0 libxkbcommon-x11-0
       - name: Install Studio and developer tooling
         run: python -m pip install -e ".[dev]"
       - name: Compile application code

@@ -1,6 +1,6 @@
 # Morphorum Studio development roadmap
 
-**Baseline:** S0 initial PySide6 shell, 2026-10-12. **Primary target:** Windows native application. **Secondary:** Linux desktop. **Source of rendering truth:** Morphorum \`dev-backend\` API contract 1.
+**Baseline:** S0 initial PySide6 shell, 2026-10-12. **Primary target:** Windows native application. **Secondary:** Linux desktop. **Source of rendering truth:** Morphorum `dev-backend` API contract 1.
 
 This is the canonical implementation/acceptance plan for future sessions. Treat each phase as incremental, with CI and **physical Windows testing before declaring it verified**. Use dedicated feature branches; preserve physical-acceptance checkpoint refs.
 
@@ -8,13 +8,13 @@ This is the canonical implementation/acceptance plan for future sessions. Treat 
 
 Deliverables:
 
-- [x] Standalone \`merberg-ai/Morphorum-Studio\` repo with existing Unlicense.
-- [x] Python 3.12 PySide6 packaging, \`python -m morphorum_studio\` launch.
+- [x] Standalone `merberg-ai/Morphorum-Studio` repo with existing Unlicense.
+- [x] Python 3.12 PySide6 packaging, `python -m morphorum_studio` launch.
 - [x] Dark graphite UI shell: sidebar, nine navigable native workspaces, explicit offline status.
 - [x] No inference/GPU/model requirements and no backend code vendoring.
 - [x] Basic Qt offscreen and version CLI tests, dual-platform CI workflow.
 - [x] Roadmap, architecture, developer workflow and new-chat handoff.
-- [ ] **Verify initial CI green** on Studio \`main\` (do not assume).
+- [ ] **Verify initial CI green** on Studio `main` (do not assume).
 - [ ] **Physical Windows launch:** window opens, layout/scaling good, sidebar navigation works, no network or backend startup, close exits cleanly.
 - [ ] User accepts UI shell; record actual test results and create S0 verified checkpoint.
 
@@ -23,21 +23,21 @@ Deliverables:
 ## S1. Backend connections, security and native service layer
 
 **S1.1 HTTP transport foundation**
-- Typed \`BackendClient\` and \`BackendError\` with bounded timeouts, explicit status handling, URL normalization, redirect rejection and stable error codes.
-- Authenticated \`GET /api/health\` and \`GET /api/client/capabilities\`; strictly require contract version 1 and validate modes/features.
+- Typed `BackendClient` and `BackendError` with bounded timeouts, explicit status handling, URL normalization, redirect rejection and stable error codes.
+- Authenticated `GET /api/health` and `GET /api/client/capabilities`; strictly require contract version 1 and validate modes/features.
 - Mock/fake-HTTP tests covering 401, 403, 409, 412, unknown API, redirects, timeouts, malformed JSON.
 - No Qt network calls on GUI thread; worker tasks emit signals and support cancellation.
 
 **S1.2 Connection Manager UX**
-- Named connection profiles: label, URL, pinned \`instance_id\`, last \`boot_id\`, preferred transport. Persist profiles **without secrets**.
+- Named connection profiles: label, URL, pinned `instance_id`, last `boot_id`, preferred transport. Persist profiles **without secrets**.
 - OS Credential Manager/secure keyring for per-client bearer tokens. Support interactive token entry or trusted local provisioning; avoid embedding a real token in test fixtures.
 - UI connection panel: add/edit/test/remove, connection status, capabilities/version, local/remote context, troubleshoot.
-- Explicit warning before transmitting secrets over plaintext HTTP on untrusted networks. Do not implement speculative network pairing; backend provides local-host admin \`clients issue/list/revoke\`.
+- Explicit warning before transmitting secrets over plaintext HTTP on untrusted networks. Do not implement speculative network pairing; backend provides local-host admin `clients issue/list/revoke`.
 - Correct handling of revoked tokens and backend instance mismatch. Reconnect after process restart and refresh capability flags.
 - Never kill a remote backend when closing Studio. A user-started local backend is also not owned by Studio.
 
 **S1 physical acceptance on Windows Omen + Studio client**
-- [ ] Connect to running \`dev-backend\` over a trusted LAN using a dedicated client token and display actual hardware/capabilities.
+- [ ] Connect to running `dev-backend` over a trusted LAN using a dedicated client token and display actual hardware/capabilities.
 - [ ] Wrong token/revoked token rejected; no secret leak to logs/config/clipboard.
 - [ ] Backend restart changes boot ID but not installation identity; UI recovers.
 - [ ] Wrong instance ID requires explicit confirmation. No automatic trust of another server.
@@ -53,14 +53,14 @@ Deliverables:
 
 **S2.2 Project Browser / revision-safe editing**
 - List/search/create/open/trash project, project metadata, recent renders.
-- GET full normalized project with strong ETag; edits use conditional \`PUT If-Match\`.
+- GET full normalized project with strong ETag; edits use conditional `PUT If-Match`.
 - Explicit 412 conflict UI: reload/compare/cancel, never silent overwrite.
 - New Project Wizard based on backend's project template; address known historical invalid 3D camera settings through validated defaults and tests rather than copying bad values.
 - Unsaved-change prompts, session restore and recent-project history.
 
 **S2.3 Project-owned assets**
 - Upload selected local PNG source image, import soundtrack WAV/MP3/OGG/FLAC and analyze Motion Lab WAV using real API limits.
-- Download/list assets and validate sizes/SHA-256; atomic \`.part\` replacement and private local cache.
+- Download/list assets and validate sizes/SHA-256; atomic `.part` replacement and private local cache.
 - Distinguish server-relative asset URL from local path; no shared path assumptions.
 
 **S2 physical acceptance**
@@ -79,8 +79,8 @@ Deliverables:
 - Native result image viewer, zoom and safe save; backend does the generation.
 
 **S3.2 Animation and job recovery**
-- Submit **full saved project** in \`POST /api/animation/renders\`, never just project ID.
-- Typed SSE \`/api/client/jobs/{kind}/{job_id}/events\` with authoritative GET polling fallback.
+- Submit **full saved project** in `POST /api/animation/renders`, never just project ID.
+- Typed SSE `/api/client/jobs/{kind}/{job_id}/events` with authoritative GET polling fallback.
 - Correct boot ID resets, console gaps, queued/running/failed/cancelled/interrupted/resumable distinctions, and explicit resume confirmation.
 - Durable render session reattachment after Studio exit, LAN outage and backend restart; recover *all* completed frame records.
 - Show running frame strip, selected frame, latest completed PNG, progress bars and render performance details.
@@ -138,16 +138,16 @@ Deliverables:
 - CI build artifacts, signed binary strategy if available, comprehensive Windows physical acceptance.
 - Clean first-run flow for connecting to an existing backend; no surprise GPU installation or service takeover.
 - Release checklist, screenshots, onboarding docs, license and reproducible build instructions.
-- Only after frontend works and user explicitly approves: separate review of Morphorum backend draft PR #32 for merging \`dev-backend\` to backend \`main\`.
+- Only after frontend works and user explicitly approves: separate review of Morphorum backend draft PR #32 for merging `dev-backend` to backend `main`.
 
 ## Discipline for every milestone
 
 1. Check [HANDOFF.md](HANDOFF.md) and actual GitHub refs/CI before claiming state.
-2. Branch \`feature/studio-sN-...\` from last accepted Studio checkpoint or \`main\`, never from an unrelated backend branch.
+2. Branch `feature/studio-sN-...` from last accepted Studio checkpoint or `main`, never from an unrelated backend branch.
 3. One coherent implementation increment at a time; add unit/mock tests and maintain portable dependencies.
 4. CI must pass on the exact candidate commit.
 5. Stop and give short **Windows physical acceptance instructions**, then fix what the user finds.
-6. After user reports PASS, document test evidence, create an immutable checkpoint ref, and seek user approval before merging Studio code into \`main\`.
+6. After user reports PASS, document test evidence, create an immutable checkpoint ref, and seek user approval before merging Studio code into `main`.
 7. Preserve backend contract boundaries and existing model projects. Avoid speculative controls and code that only looks functional.
 8. Record any discovered backend API gaps as new separate tasks rather than silently weakening Studio correctness.
 

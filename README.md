@@ -44,11 +44,11 @@ $env:QT_QPA_PLATFORM = "offscreen"
 Remove-Item Env:QT_QPA_PLATFORM
 ~~~
 
-The packaging script entrypoint is also \`morphorum-studio\` after installation; \`python -m morphorum_studio --version\` does not need a display server.
+The packaging script entrypoint is also `morphorum-studio` after installation; `python -m morphorum_studio --version` does not need a display server.
 
 ## What exists today
 
-- Python 3.12 packaging via \`pyproject.toml\`, Unlicense and focused \`.gitignore\`.
+- Python 3.12 packaging via `pyproject.toml`, Unlicense and focused `.gitignore`.
 - PySide6 dark desktop shell with working navigation: Home, Connections, Projects, Image Lab, Editor, Motion Lab, Render Queue, Console, Settings.
 - Honest **BACKEND OFFLINE** status, with no fake connection or render controls.
 - Basic offline UI tests and GitHub Actions on Windows and Linux.
@@ -62,9 +62,9 @@ The packaging script entrypoint is also \`morphorum-studio\` after installation;
 
 ## Backend relationship
 
-The accepted backend is **\`merberg-ai/Morphorum\` on \`dev-backend\`**, combined merge SHA \`2046d36ff6e084d801a14e2024d14665c207d884\`. Backend PRs #27–#31 were integrated into \`dev-backend\` and post-integration CI passed (536 passed / 1 skipped). **Backend \`main\` has intentionally NOT been merged**: [draft review PR #32](https://github.com/merberg-ai/Morphorum/pull/32) is held until this desktop frontend is working and the user explicitly approves.
+The accepted backend is **`merberg-ai/Morphorum` on `dev-backend`**, combined merge SHA `2046d36ff6e084d801a14e2024d14665c207d884`. Backend PRs #27–#31 were integrated into `dev-backend` and post-integration CI passed (536 passed / 1 skipped). **Backend `main` has intentionally NOT been merged**: [draft review PR #32](https://github.com/merberg-ai/Morphorum/pull/32) is held until this desktop frontend is working and the user explicitly approves.
 
-Canonical backend implementation guide: [STUDIO_CLIENT_HANDOFF.md](https://github.com/merberg-ai/Morphorum/blob/dev-backend/docs/STUDIO_CLIENT_HANDOFF.md). Runtime API version is **1**, discovered via authenticated \`GET /api/client/capabilities\`.
+Canonical backend implementation guide: [STUDIO_CLIENT_HANDOFF.md](https://github.com/merberg-ai/Morphorum/blob/dev-backend/docs/STUDIO_CLIENT_HANDOFF.md). Runtime API version is **1**, discovered via authenticated `GET /api/client/capabilities`.
 
 Do **not** copy backend Python inference packages or its browser UI into this repo. Studio is a separate client.
 

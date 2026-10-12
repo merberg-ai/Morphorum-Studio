@@ -40,3 +40,29 @@ def test_native_profiles_and_safe_offline(tmp_path):
     finally:
         panel.close()
         assert app is not None
+
+
+def test_import_host_token_file(tmp_path, monkeypatch):
+    from morphorum_studio.ui import connections_panel as module
+
+    app = QApplication.instance() or QApplication([])
+    store = ProfileStore(tmp_path / "profiles.json")
+    vault = FakeVault()
+    panel = ConnectionsPanel(profile_store=store, credential_store=vault)
+    token_file = tmp_path / "issued.token"
+    token_file.write_text("local-test-secret-token\\n", encoding="utf-8")
+    try:
+        panel.name.setText("GPU host")
+        panel.url.setText("http://127.0.0.1:7866")
+        panel.save_profile()
+        profile = panel.selected()
+        panel.trust_http.setChecked(True)
+        monkeypatch.setattr(module.QFileDialog, "getOpenFileName",
+                            lambda *a, **k: (str(token_file), "Token files"))
+        panel.import_token_file()
+        assert vault.get(profile.id) == "local-test-secret-token"
+        assert "token" not in store.path.read_text().lower()
+        assert "imported" in panel.details.text().lower()
+    finally:
+        panel.close()
+        assert app is not None

@@ -14,7 +14,7 @@ Deliverables:
 - [x] No inference/GPU/model requirements and no backend code vendoring.
 - [x] Basic Qt offscreen and version CLI tests, dual-platform CI workflow.
 - [x] Roadmap, architecture, developer workflow and new-chat handoff.
-- [ ] **Verify initial CI green** on Studio `main` (do not assume).
+- [x] **Verify initial CI green** on Studio `main`: GitHub Actions run 38316458956 passed on Windows Python 3.12 and Ubuntu Python 3.12 at `af77b402edb7e06ec8297db3961f6535e21e5afc`.
 - [ ] **Physical Windows launch:** window opens, layout/scaling good, sidebar navigation works, no network or backend startup, close exits cleanly.
 - [ ] User accepts UI shell; record actual test results and create S0 verified checkpoint.
 

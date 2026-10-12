@@ -47,7 +47,7 @@ class ConnectionsPanel(QWidget):
         self.import_button.setToolTip("Import a backend-issued client token file into the OS credential store")
         layout.addWidget(self.import_button)
         guide = QLabel(
-            "On the BACKEND host, issue a token with:\\n"
+            "On the BACKEND host, issue a token with:\n"
             '  .\\\\.venv\\\\Scripts\\\\python.exe -m morphorum clients issue "Studio PC" --days 90 --out ".\\\\data\\\\studio-client.token"\\n'
             "Transfer that file securely (USB or authenticated encrypted transfer), then import it here. "
             "Never put it in a repository or paste it into chat."

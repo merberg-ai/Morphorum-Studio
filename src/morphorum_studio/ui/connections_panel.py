@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 from urllib.parse import urlsplit
+from pathlib import Path
 
 from PySide6.QtCore import QThreadPool, Signal
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
-    QMessageBox, QPushButton, QVBoxLayout, QWidget
+    QMessageBox, QPushButton, QVBoxLayout, QWidget, QFileDialog
 )
 
 from morphorum_studio.backend.client import normalize_base_url
@@ -42,6 +43,17 @@ class ConnectionsPanel(QWidget):
         form.addRow("Backend URL", self.url)
         form.addRow("Bearer token", self.token)
         layout.addLayout(form)
+        self.import_button = QPushButton("Import Token File…")
+        self.import_button.setToolTip("Import a backend-issued client token file into the OS credential store")
+        layout.addWidget(self.import_button)
+        guide = QLabel(
+            "On the BACKEND host, issue a token with:\\n"
+            '  .\\\\.venv\\\\Scripts\\\\python.exe -m morphorum clients issue "Studio PC" --days 90 --out ".\\\\data\\\\studio-client.token"\\n'
+            "Transfer that file securely (USB or authenticated encrypted transfer), then import it here. "
+            "Never put it in a repository or paste it into chat."
+        )
+        guide.setWordWrap(True)
+        layout.addWidget(guide)
         self.trust_http = QCheckBox("I trust this LAN/loopback or encrypted tunnel for HTTP credentials")
         layout.addWidget(self.trust_http)
         buttons = QHBoxLayout()
@@ -58,6 +70,7 @@ class ConnectionsPanel(QWidget):
         self.details.setWordWrap(True)
         layout.addWidget(self.details)
         layout.addStretch()
+        self.import_button.clicked.connect(self.import_token_file)
         self.new_button.clicked.connect(self.new_profile)
         self.save_button.clicked.connect(self.save_profile)
         self.remove_button.clicked.connect(self.remove_profile)
@@ -121,6 +134,40 @@ class ConnectionsPanel(QWidget):
             self.status_changed.emit("BACKEND OFFLINE")
         except (ValueError, RuntimeError, OSError) as exc:
             QMessageBox.warning(self, "Could not save connection", str(exc))
+
+    def import_token_file(self):
+        """Read a small host-issued secret locally, then store only in OS keyring."""
+        if self._busy:
+            return
+        p = self.selected()
+        if p is None:
+            QMessageBox.information(self, "Save profile first",
+                "Create and save a named connection before importing its token.")
+            return
+        if urlsplit(p.url).scheme == "http" and not self.trust_http.isChecked():
+            QMessageBox.warning(self, "Trusted connection required",
+                "Confirm this is a trusted LAN or encrypted tunnel before importing credentials.")
+            return
+        filename, _ = QFileDialog.getOpenFileName(
+            self, "Import backend-issued token file", "", "Token files (*.token *.txt);;All files (*)")
+        if not filename:
+            return
+        try:
+            path = Path(filename)
+            if not path.is_file() or path.stat().st_size > 8192:
+                raise ValueError("Token file must be a regular file smaller than 8 KiB")
+            token = path.read_text(encoding="utf-8-sig").strip()
+            if not token or len(token) > 4096 or any(c.isspace() for c in token):
+                raise ValueError("File does not contain a valid single-line token")
+            self.vault.set(p.id, token)
+        except (OSError, UnicodeError, ValueError, RuntimeError) as exc:
+            QMessageBox.warning(self, "Token import failed", str(exc))
+            return
+        self.token.clear()
+        self.details.setText(
+            "Token imported into OS credential storage. The source file was not deleted. "
+            "Remove the transfer copy securely when no longer needed, then Connect / Test."
+        )
 
     def remove_profile(self):
         if self._busy:

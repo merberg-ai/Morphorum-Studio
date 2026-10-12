@@ -96,3 +96,13 @@ The backend docs may describe their own **historical** feature-branch state; cur
 - Backend restart can interrupt active GPU work; don't automatically resume it. Completed media persisted through restart as physically verified.
 - Backend's **`main` stays untouched** until frontend is working and user explicitly approves draft #32.
 - Do not claim Studio features or CI/physical outcomes that have not been implemented/tested.
+
+## S0 accepted and S1.1 work in progress (2026-10-12)
+
+- User confirmed all S0 physical Windows shell tests PASS.
+- S0 Windows-verified checkpoint branch: `checkpoint/studio-s0-windows-verified-20261012`, from Studio commit `fb5024e7592a6d271a8eeb214fc2470387d2e363`. Exact checkpoint CI passed on both Windows and Linux.
+- Work branch: `feature/studio-s1-connection-foundation`. Do **not** merge pending S1 changes until physical review and user approval.
+- S1.1 pure Python typed discovery client at `src/morphorum_studio/backend/client.py`, tested using mocked HTTP in `tests/test_backend_client.py`. This is **not yet connected to the Qt interface**. No live LAN acceptance claimed.
+- User additionally requested setup/install/update/launch scripts; added `setup.ps1`, `run.ps1`, `update.ps1`, plus `setup.sh`, `run.sh`, `update.sh`. See `docs/S1_FOUNDATION.md` for security notes and usage.
+- Next physical acceptance: switch to S1 feature branch, run Windows `.\setup.ps1`, `.\run.ps1`, `.\update.ps1`; verify app still navigates nine pages offline, does not launch backend, update safely preserves current branch. Then begin S1.2 worker-backed connection panel with keyring and instance identity confirmation.
+- Ignore earlier handoff wording that says S0 physical verification is pending; this appended record supersedes it.

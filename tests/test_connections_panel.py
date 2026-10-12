@@ -50,7 +50,7 @@ def test_import_host_token_file(tmp_path, monkeypatch):
     vault = FakeVault()
     panel = ConnectionsPanel(profile_store=store, credential_store=vault)
     token_file = tmp_path / "issued.token"
-    token_file.write_text("local-test-secret-token\\n", encoding="utf-8")
+    token_file.write_text("local-test-secret-token", encoding="utf-8")
     try:
         panel.name.setText("GPU host")
         panel.url.setText("http://127.0.0.1:7866")

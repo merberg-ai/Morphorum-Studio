@@ -106,3 +106,9 @@ The backend docs may describe their own **historical** feature-branch state; cur
 - User additionally requested setup/install/update/launch scripts; added `setup.ps1`, `run.ps1`, `update.ps1`, plus `setup.sh`, `run.sh`, `update.sh`. See `docs/S1_FOUNDATION.md` for security notes and usage.
 - Next physical acceptance: switch to S1 feature branch, run Windows `.\setup.ps1`, `.\run.ps1`, `.\update.ps1`; verify app still navigates nine pages offline, does not launch backend, update safely preserves current branch. Then begin S1.2 worker-backed connection panel with keyring and instance identity confirmation.
 - Ignore earlier handoff wording that says S0 physical verification is pending; this appended record supersedes it.
+
+## S1.2 connection manager candidate (2026-10-12)
+
+S1.2 implementation on `feature/studio-s1-connection-foundation` now includes `backend/profiles.py` (named, non-secret, atomic JSON profiles), `backend/credentials.py` (OS keyring tokens), `backend/worker.py` (Qt QRunnable network discovery), and `ui/connections_panel.py` (New/Save/Remove/Connect/Test/Disconnect UI, backend details, safe offline status, HTTP trust confirmation, and explicit identity mismatch approval). The Connections workspace is wired to this real panel; top-bar status changes with connection tests. The keyring package is installed in pyproject dependencies.
+
+**Acceptance not yet claimed:** CI on the final commit and physical Windows LAN tests must pass. The current worker model supports one-shot manual connection tests; automatic retry/backoff, long-lived reconnect state, cancel-in-flight, and persisted-session job reconciliation remain follow-up S1 hardening. Do not treat the green CONNECTED label as continuous liveness monitoring. No ability to start/stop the backend is added. Backend `main` and Studio `main` remain untouched.

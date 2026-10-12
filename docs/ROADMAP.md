@@ -15,20 +15,20 @@ Deliverables:
 - [x] Basic Qt offscreen and version CLI tests, dual-platform CI workflow.
 - [x] Roadmap, architecture, developer workflow and new-chat handoff.
 - [x] **Verify initial CI green** on Studio `main`: GitHub Actions run 38316458956 passed on Windows Python 3.12 and Ubuntu Python 3.12 at `af77b402edb7e06ec8297db3961f6535e21e5afc`.
-- [ ] **Physical Windows launch:** window opens, layout/scaling good, sidebar navigation works, no network or backend startup, close exits cleanly.
-- [ ] User accepts UI shell; record actual test results and create S0 verified checkpoint.
+- [x] **Physical Windows launch (user PASS, 2026-10-12):** window opens, layout/scaling good, sidebar navigation works, no network or backend startup, close exits cleanly.
+- [x] User accepts UI shell; S0 verified checkpoint branch `checkpoint/studio-s0-windows-verified-20261012` from `fb5024e7592a6d271a8eeb214fc2470387d2e363`.
 
 **Exit criterion:** CI green and user-confirmed normal Windows GUI behavior. No remote features claimed.
 
 ## S1. Backend connections, security and native service layer
 
-**S1.1 HTTP transport foundation**
-- Typed `BackendClient` and `BackendError` with bounded timeouts, explicit status handling, URL normalization, redirect rejection and stable error codes.
-- Authenticated `GET /api/health` and `GET /api/client/capabilities`; strictly require contract version 1 and validate modes/features.
-- Mock/fake-HTTP tests covering 401, 403, 409, 412, unknown API, redirects, timeouts, malformed JSON.
-- No Qt network calls on GUI thread; worker tasks emit signals and support cancellation.
+**S1.1 HTTP transport foundation (implemented on feature branch; live acceptance pending)**
+- [x] Typed `BackendClient` and `BackendError` with bounded timeouts, explicit status handling, URL normalization, redirect rejection and stable error codes.
+- [x] Authenticated `GET /api/health` and `GET /api/client/capabilities`; strictly require contract version 1 and validate modes/features.
+- [x] Mock/fake-HTTP tests covering 401, 403, 409, 412, unknown API, redirects, timeouts, malformed JSON.
+- [ ] No Qt network calls on GUI thread; worker tasks emit signals and support cancellation (deferred to S1.2; transport is not wired to UI).
 
-**S1.2 Connection Manager UX**
+**S1.2 Connection Manager UX**\n- [x] Initial Windows/Linux setup, fast-forward-only update, and native launch scripts delivered with S1.1; test on physical Windows before acceptance.
 - Named connection profiles: label, URL, pinned `instance_id`, last `boot_id`, preferred transport. Persist profiles **without secrets**.
 - OS Credential Manager/secure keyring for per-client bearer tokens. Support interactive token entry or trusted local provisioning; avoid embedding a real token in test fixtures.
 - UI connection panel: add/edit/test/remove, connection status, capabilities/version, local/remote context, troubleshoot.

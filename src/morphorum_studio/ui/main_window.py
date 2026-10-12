@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from morphorum_studio import __version__
+from morphorum_studio.ui.connections_panel import ConnectionsPanel
 
 
 PAGES: tuple[tuple[str, str, str], ...] = (
@@ -136,7 +137,12 @@ class StudioMainWindow(QMainWindow):
         self.pages = QStackedWidget()
         self.pages.setObjectName("pages")
         for page_name, title, description in PAGES:
-            self.pages.addWidget(self._make_page(page_name, title, description))
+            if page_name == "Connections":
+                self.connections_panel = ConnectionsPanel()
+                self.connections_panel.status_changed.connect(self.connection_status.setText)
+                self.pages.addWidget(self.connections_panel)
+            else:
+                self.pages.addWidget(self._make_page(page_name, title, description))
         workspace_layout.addWidget(self.pages, 1)
 
         self.navigation.currentRowChanged.connect(self.pages.setCurrentIndex)
@@ -147,7 +153,7 @@ class StudioMainWindow(QMainWindow):
         footer.setObjectName("footer")
         footer_layout = QHBoxLayout(footer)
         footer_layout.setContentsMargins(24, 9, 24, 9)
-        footer_layout.addWidget(_label("Studio S0  •  Local UI only", "footerText"))
+        footer_layout.addWidget(_label("Studio S1.2  •  Native remote connection manager", "footerText"))
         footer_layout.addStretch()
         footer_layout.addWidget(_label("No GPU or model downloads required", "footerText"))
         outer.addWidget(footer)

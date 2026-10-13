@@ -43,3 +43,7 @@ This milestone is a foundation, not a claim of live Studio-to-backend connection
 5. Revoke an old client credential on the backend host via `python -m morphorum clients list` and `python -m morphorum clients revoke CLIENT_ID`.
 
 This is local file import, **not remote pairing or automatic backend-host retrieval**. Importing does not change the backend or bypass authentication.
+
+## S1.2 UX hotfix after Windows screenshot (2026-10-12)
+
+The initial import button incorrectly required HTTP trust confirmation *before* it would open a local file picker. Updated behavior: Save profile -> Browse and import token file -> choose the host-issued file -> token saved to OS keyring. HTTP trust is checked only when **Connect / Test** is about to transmit credentials, at which point a specific warning and confirmation are shown. The provisioning instructions are now separated into readable steps. A regression test imports from file while the trusted HTTP checkbox is unchecked. This is a testing candidate pending CI and Windows confirmation.

@@ -17,6 +17,8 @@ from PySide6.QtWidgets import (
 
 from morphorum_studio import __version__
 from morphorum_studio.ui.connections_panel import ConnectionsPanel
+from morphorum_studio.ui.preferences import StudioPreferences
+from morphorum_studio.ui.startup_settings import StartupSettingsPanel
 
 
 PAGES: tuple[tuple[str, str, str], ...] = (
@@ -88,8 +90,9 @@ def _label(text: str, object_name: str | None = None) -> QLabel:
 class StudioMainWindow(QMainWindow):
     """Responsive-enough desktop-first S0 shell; all navigation works offline."""
 
-    def __init__(self) -> None:
+    def __init__(self, preferences: StudioPreferences | None = None) -> None:
         super().__init__()
+        self.preferences = preferences or StudioPreferences()
         self.setWindowTitle(f"Morphorum Studio | {__version__}")
         self.resize(1200, 760)
         self.setMinimumSize(880, 560)
@@ -141,12 +144,28 @@ class StudioMainWindow(QMainWindow):
                 self.connections_panel = ConnectionsPanel()
                 self.connections_panel.status_changed.connect(self.connection_status.setText)
                 self.pages.addWidget(self.connections_panel)
+            elif page_name == "Settings":
+                self.pages.addWidget(StartupSettingsPanel(self.preferences))
             else:
                 self.pages.addWidget(self._make_page(page_name, title, description))
         workspace_layout.addWidget(self.pages, 1)
 
         self.navigation.currentRowChanged.connect(self.pages.setCurrentIndex)
-        self.navigation.setCurrentRow(0)
+        self.navigation.currentRowChanged.connect(self._remember_workspace)
+        selected_id = self.preferences.profile("last_selected")
+        if selected_id:
+            self.connections_panel.select_by_id(selected_id)
+        self.connections_panel.profile_selected.connect(
+            lambda profile_id: self.preferences.set_profile("last_selected", profile_id)
+        )
+        self.connections_panel.connection_succeeded.connect(
+            lambda profile_id: self.preferences.set_profile("last_successful", profile_id)
+        )
+        start_page = self.preferences.workspace() if self.preferences.enabled(
+            "restore_workspace", True
+        ) else "Home"
+        names = [entry[0] for entry in PAGES]
+        self.navigation.setCurrentRow(names.index(start_page) if start_page in names else 0)
         outer.addWidget(workspace, 1)
 
         footer = QFrame()
@@ -157,6 +176,18 @@ class StudioMainWindow(QMainWindow):
         footer_layout.addStretch()
         footer_layout.addWidget(_label("No GPU or model downloads required", "footerText"))
         outer.addWidget(footer)
+        self.preferences.restore_window(self)
+
+    def _remember_workspace(self, index):
+        if index >= 0:
+            self.preferences.set_workspace(PAGES[index][0])
+
+    def closeEvent(self, event):
+        if self.preferences.enabled("restore_geometry", True):
+            self.preferences.save_window(self)
+        self.preferences.sync()
+        self.connections_panel.disconnect()
+        super().closeEvent(event)
 
     def _make_page(self, name: str, title: str, description: str) -> QWidget:
         page = QFrame()

@@ -322,6 +322,11 @@ QLineEdit:focus, QComboBox:focus, QTextEdit:focus,
 QPlainTextEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {
     border: 1px solid $cyan;
 }
+QPlainTextEdit#consoleView {
+    background: $void;
+    font-family: "$font_mono", "Consolas", monospace;
+    font-size: 12px;
+}
 QLineEdit:read-only {
     color: $dim;
     background: $panel;

@@ -32,6 +32,8 @@ from morphorum_studio.ui.preferences import StudioPreferences
 from morphorum_studio.ui.projects_page import ProjectsPage
 from morphorum_studio.ui.render_service import RenderService
 from morphorum_studio.ui.video_service import VideoService
+from morphorum_studio.ui.console_service import ConsoleService
+from morphorum_studio.ui.console_page import ConsolePage
 from morphorum_studio.ui.projects_service import ProjectsService
 from morphorum_studio.ui.shell import NavRail, TitleBar
 from morphorum_studio.ui.startup_settings import StartupSettingsPanel
@@ -84,8 +86,8 @@ PAGES: tuple[tuple[str, str, str], ...] = (
     (
         "Console",
         "Backend Events",
-        "S3: authenticated console messages, live job events, gap detection, "
-        "and authoritative polling after connection loss.",
+        "Live backend log with level and category filters, search, follow, "
+        "copy and save; gaps and restarts are reported, never hidden.",
     ),
     (
         "Settings",
@@ -180,6 +182,7 @@ class StudioMainWindow(QMainWindow):
             self.session, self.journal,
             Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.CacheLocation))
             / "video-playback", self)
+        self.console_service = ConsoleService(self.session, self)
         self.pages = QStackedWidget()
         self.pages.setObjectName("pages")
         for page_name, title, description in PAGES:
@@ -204,6 +207,9 @@ class StudioMainWindow(QMainWindow):
                     lambda: self.navigation.setCurrentRow(names.index("Connections"))
                 )
                 self.pages.addWidget(self.image_lab_page)
+            elif page_name == "Console":
+                self.console_page = ConsolePage(self.session, self.console_service)
+                self.pages.addWidget(self.console_page)
             elif page_name == "Connections":
                 self.connections_panel = ConnectionsPanel(
                     preferences=self.preferences, session=self.session
@@ -320,6 +326,7 @@ class StudioMainWindow(QMainWindow):
         if self.preferences.enabled("restore_geometry", True):
             self.preferences.save_window(self)
         self.preferences.sync()
+        self.console_service.stop()
         self.dashboard.set_active(False)
         self.connections_panel.disconnect()
         super().closeEvent(event)

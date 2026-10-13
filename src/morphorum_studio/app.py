@@ -36,8 +36,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     app.setOrganizationName("Morphorum")
     app.setStyle("Fusion")
     app.setStyleSheet(DARK_STYLESHEET)
-    window = StudioMainWindow()
+    from .ui.preferences import StudioPreferences
+    from .ui.splash import StudioSplash
+
+    preferences = StudioPreferences()
+    splash = None
+    if preferences.enabled("show_splash", True):
+        splash = StudioSplash()
+        splash.show()
+        splash.stage("Loading desktop preferences…")
+        app.processEvents()
+        splash.stage("Preparing native workspaces…")
+        app.processEvents()
+    window = StudioMainWindow(preferences=preferences)
+    if splash:
+        splash.stage("Restoring desktop session…")
+        app.processEvents()
     window.show()
+    if splash:
+        splash.finish(window)
     if not owns_app:
         return 0  # The embedding application owns its event loop.
     return app.exec()

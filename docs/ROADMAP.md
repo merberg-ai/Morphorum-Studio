@@ -103,7 +103,7 @@ Incremental implementation order (stop for user review before GPU operations):
 - Durable render session reattachment after Studio exit, LAN outage and backend restart; recover *all* completed frame records.
 - Show running frame strip, selected frame, latest completed PNG, progress bars and render performance details.
 
-**S3.3 Video/audio exports**
+**S3.3 Video/audio exports (IMPLEMENTED on feature/studio-s3-3-video, see [S3_3_VIDEO.md](S3_3_VIDEO.md); awaiting CI + physical Windows test)**
 - Discover host FFmpeg availability; MP4/WebM with audio; track encoding and return completed URLs.
 - SHA-256-verified/atomic downloads of PNG/GIF/MP4/WebM. Play animation/video with correct media controls and audio.
 - Explicit warning if frozen soundtrack missing; do not claim audio present without evidence.

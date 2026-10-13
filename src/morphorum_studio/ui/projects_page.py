@@ -92,9 +92,10 @@ class ProjectsPage(QFrame):
     open_connections = Signal()
 
     def __init__(self, session: BackendSession, service: ProjectsService,
-                 preferences: StudioPreferences, render_service=None) -> None:
+                 preferences: StudioPreferences, render_service=None, video_service=None) -> None:
         super().__init__()
         self._render_service = render_service
+        self._video_service = video_service
         self.setObjectName("pageSurface")
         self._session = session
         self._service = service
@@ -259,7 +260,7 @@ class ProjectsPage(QFrame):
 
         self.render_card = None
         if self._render_service is not None:
-            self.render_card = RenderCard(self._render_service)
+            self.render_card = RenderCard(self._render_service, self._video_service)
             dbox.addWidget(self.render_card)
 
         renders = QFrame()

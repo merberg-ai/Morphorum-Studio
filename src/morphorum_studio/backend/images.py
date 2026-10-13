@@ -200,6 +200,7 @@ def parse_jobs(payload: Any) -> tuple[ImageJob, ...]:
 # ----------------------------------------------------------------------------- journal
 
 _KEY = re.compile(r"studio-[0-9a-f]{32}")
+KINDS = ("image", "animation", "video")
 
 
 @dataclass(frozen=True)
@@ -210,7 +211,7 @@ class JournalEntry:
     created: float
     state: str = "pending"  # pending: POST may or may not have reached the backend
     job_id: str | None = None  # submitted: the backend gave us this job
-    kind: str = "image"  # image | animation
+    kind: str = "image"  # image | animation | video
 
 
 class SubmissionJournal:
@@ -242,7 +243,7 @@ class SubmissionJournal:
 
     def begin(self, profile_id: str, payload: dict, kind: str = "image") -> JournalEntry:
         """Persist the exact body and a fresh key. Call before the POST, never after."""
-        if kind not in ("image", "animation"):
+        if kind not in KINDS:
             raise ValueError("unknown submission kind")
         if len(self.entries(profile_id)) >= self.MAX_ENTRIES:
             raise ValueError("Too many unfinished submissions; resolve or discard some first")
@@ -281,7 +282,7 @@ class SubmissionJournal:
                         or (job_id is not None and not (isinstance(job_id, str) and JOB_ID.fullmatch(job_id)))):
                     continue
                 entry_kind = raw.get("kind", "image")
-                if entry_kind not in ("image", "animation"):
+                if entry_kind not in KINDS:
                     continue
                 if (profile_id is None or raw["profile"] == profile_id) \
                         and (kind is None or entry_kind == kind):

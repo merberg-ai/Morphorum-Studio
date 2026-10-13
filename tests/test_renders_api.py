@@ -85,7 +85,7 @@ def test_journal_kinds_are_separate(tmp_path):
     assert submitted.kind == "animation"
     assert j.entries("p", "animation")[0].job_id == "render-1"
     with pytest.raises(ValueError):
-        j.begin("p", {}, kind="video")
+        j.begin("p", {}, kind="audio")
 
 
 def test_journal_accepts_large_project_payload(tmp_path):

@@ -75,9 +75,10 @@ class PreviewDialog(QDialog):
 
 
 class RenderCard(QFrame):
-    def __init__(self, service: RenderService) -> None:
+    def __init__(self, service: RenderService, video_service=None) -> None:
         super().__init__()
         self.setObjectName("card")
+        self._video_service = video_service
         self._service = service
         self._project: str | None = None
         self._locked = False
@@ -181,6 +182,12 @@ class RenderCard(QFrame):
         media.addStretch(1)
         box.addLayout(media)
 
+        self.video_panel = None
+        if self._video_service is not None:
+            from morphorum_studio.ui.video_panel import VideoPanel
+            self.video_panel = VideoPanel(self._video_service)
+            box.addWidget(self.video_panel)
+
         self.start_button.clicked.connect(self._start)
         self.cancel_button.clicked.connect(self._cancel)
         self.resume_button.clicked.connect(self._resume)
@@ -223,6 +230,8 @@ class RenderCard(QFrame):
             self._update()
 
     def _show_idle(self) -> None:
+        if self.video_panel is not None:
+            self.video_panel.set_render(None, None)
         self.status.setText("No render yet.")
         self.detail.setText("")
         self.progress.setValue(0)
@@ -347,6 +356,8 @@ class RenderCard(QFrame):
             self._show_job(job)
 
     def _show_job(self, job: RenderJob) -> None:
+        if self.video_panel is not None:
+            self.video_panel.set_render(self._project, job)
         text = render_text(job)
         if job.cancel_requested and job.active:
             text += " (cancelling…)"

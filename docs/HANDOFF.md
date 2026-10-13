@@ -188,3 +188,6 @@ See docs/S3_1_IMAGE_LAB.md. Stacked on feature/studio-s2-4-polish. Durable journ
 
 ## S3.2 animation renders (branch feature/studio-s3-2-animation)
 See docs/S3_2_ANIMATION.md. Stacked on feature/studio-s3-1-image-lab. Render card on the Projects page; journalled start, REST polling, resume, frame browser, GIF preview. Awaiting CI and a physical Windows test. Nothing merged.
+
+## S3.3 video exports (branch feature/studio-s3-3-video)
+See docs/S3_3_VIDEO.md. Stacked on feature/studio-s3-2-animation. Export section in the Render card: backend FFmpeg discovery, journalled idempotent export, REST polling, audio stated only from the export record, SHA-256-verified save, cached verified playback. Awaiting CI and a physical Windows test. Nothing merged.

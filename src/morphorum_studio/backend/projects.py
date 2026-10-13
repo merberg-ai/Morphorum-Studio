@@ -212,6 +212,14 @@ class ProjectsApi:
             raise BackendError("INVALID_RESPONSE", "Backend did not provide a project revision")
         return parse_project(payload), etag
 
+    def raw(self, project_id: str) -> dict[str, Any]:
+        """The complete saved project exactly as the backend stores it (needed to start a render)."""
+        payload, _ = self._client.get_json_etag(self._path(project_id))
+        project = _object(payload, "Project").get("project")
+        if not isinstance(project, dict) or project.get("id") != project_id:
+            raise BackendError("INVALID_RESPONSE", "Project response is incomplete")
+        return project
+
     def renders(self, project_id: str) -> tuple[RenderSummary, ...]:
         return parse_renders(self._client.get_json(self._path(project_id, "/renders")))
 

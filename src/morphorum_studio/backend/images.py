@@ -210,11 +210,12 @@ class JournalEntry:
     created: float
     state: str = "pending"  # pending: POST may or may not have reached the backend
     job_id: str | None = None  # submitted: the backend gave us this job
+    kind: str = "image"  # image | animation
 
 
 class SubmissionJournal:
     MAX_ENTRIES = 50
-    MAX_BYTES = 64 * 1024
+    MAX_BYTES = 2 * 1024 * 1024  # an animation entry carries the whole project
 
     def __init__(self, directory: str | os.PathLike) -> None:
         self._dir = Path(directory)
@@ -230,7 +231,7 @@ class SubmissionJournal:
         temp = target.with_name(target.name + ".tmp")
         body = json.dumps({"v": 1, "key": entry.key, "profile": entry.profile_id,
                            "payload": entry.payload, "created": entry.created,
-                           "state": entry.state, "job_id": entry.job_id})
+                           "state": entry.state, "job_id": entry.job_id, "kind": entry.kind})
         flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
         fd = os.open(temp, flags, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -239,17 +240,20 @@ class SubmissionJournal:
             os.fsync(handle.fileno())
         os.replace(temp, target)
 
-    def begin(self, profile_id: str, payload: dict) -> JournalEntry:
+    def begin(self, profile_id: str, payload: dict, kind: str = "image") -> JournalEntry:
         """Persist the exact body and a fresh key. Call before the POST, never after."""
+        if kind not in ("image", "animation"):
+            raise ValueError("unknown submission kind")
         if len(self.entries(profile_id)) >= self.MAX_ENTRIES:
             raise ValueError("Too many unfinished submissions; resolve or discard some first")
-        entry = JournalEntry("studio-" + secrets.token_hex(16), profile_id, dict(payload), time.time())
+        entry = JournalEntry("studio-" + secrets.token_hex(16), profile_id, dict(payload),
+                             time.time(), kind=kind)
         self._write(entry)
         return entry
 
     def submitted(self, entry: JournalEntry, job_id: str) -> JournalEntry:
         updated = JournalEntry(entry.key, entry.profile_id, entry.payload, entry.created,
-                               "submitted", job_id)
+                               "submitted", job_id, entry.kind)
         self._write(updated)
         return updated
 
@@ -257,7 +261,7 @@ class SubmissionJournal:
         with contextlib.suppress(OSError):
             self._file(key).unlink()
 
-    def entries(self, profile_id: str | None = None) -> list[JournalEntry]:
+    def entries(self, profile_id: str | None = None, kind: str | None = None) -> list[JournalEntry]:
         found = []
         try:
             files = sorted(self._dir.glob("studio-*.json"))
@@ -276,9 +280,13 @@ class SubmissionJournal:
                         or not isinstance(raw.get("profile"), str)
                         or (job_id is not None and not (isinstance(job_id, str) and JOB_ID.fullmatch(job_id)))):
                     continue
-                if profile_id is None or raw["profile"] == profile_id:
+                entry_kind = raw.get("kind", "image")
+                if entry_kind not in ("image", "animation"):
+                    continue
+                if (profile_id is None or raw["profile"] == profile_id) \
+                        and (kind is None or entry_kind == kind):
                     found.append(JournalEntry(key, raw["profile"], payload, float(raw.get("created", 0)),
-                                              state, job_id))
+                                              state, job_id, entry_kind))
             except (OSError, ValueError, KeyError, TypeError):
                 continue
         found.sort(key=lambda e: e.created)

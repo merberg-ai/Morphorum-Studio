@@ -147,7 +147,7 @@ class ImageLabService(QObject):
         client = self._client()
         if profile is None or client is None:
             return
-        entries = self._journal.entries(profile)
+        entries = self._journal.entries(profile, "image")
         unknown = [e for e in entries if e.state == "pending"]
         known = [e for e in entries if e.state == "submitted" and e.job_id]
         epoch = self._session.epoch
@@ -224,7 +224,7 @@ class ImageLabService(QObject):
                 if error[0] in DEFINITIVE:
                     self._journal.finish(entry.key)  # The backend refused it; nothing to recover.
                 else:
-                    self.pending_ready.emit(self._journal.entries(self.profile_id))
+                    self.pending_ready.emit(self._journal.entries(self.profile_id, "image"))
                 self.failed.emit("submit", *error)
                 return
             self.submitted.emit(entry, result)
@@ -283,7 +283,7 @@ class ImageLabService(QObject):
     def _finished(self, job: ImageJob) -> None:
         self._watched = None
         self._timer.stop()
-        for entry in self._journal.entries(self.profile_id):
+        for entry in self._journal.entries(self.profile_id, "image"):
             if entry.job_id == job.id:
                 self._journal.finish(entry.key)
 

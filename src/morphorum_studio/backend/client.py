@@ -164,7 +164,8 @@ class BackendClient:
         return self._request("GET", path, params)
 
     def send_json(self, method: str, path: str, body: Mapping[str, Any] | None = None, *,
-                  if_match: str | None = None, idempotency_key: str | None = None) -> tuple[dict[str, Any], str | None]:
+                  if_match: str | None = None, idempotency_key: str | None = None,
+                  max_bytes: int = MAX_REQUEST_BYTES) -> tuple[dict[str, Any], str | None]:
         """One explicit state-changing call (POST, PUT or DELETE). Never retried.
 
         ``if_match`` (PUT only) must be a quoted 64-hex ETag from an earlier read. Error messages
@@ -181,7 +182,7 @@ class BackendClient:
         data = None
         if body is not None:
             data = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-            if len(data) > MAX_REQUEST_BYTES:
+            if len(data) > min(max_bytes, 4 * 1024 * 1024):
                 raise ValueError("request body too large")
         extra = {"Idempotency-Key": idempotency_key} if idempotency_key else None
         return self._request(method, path, None, data, if_match, include_detail=True,

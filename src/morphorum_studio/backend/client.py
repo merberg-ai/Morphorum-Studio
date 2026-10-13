@@ -113,6 +113,7 @@ def _encode_query(params: Mapping[str, str | int | None] | None) -> str:
 
 _ETAG = re.compile(r'"[0-9a-f]{64}"')
 MAX_REQUEST_BYTES = 262_144
+_IDEMPOTENCY = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}")
 MAX_UPLOAD_BYTES = 48 * 1024 * 1024
 _UPLOAD_HEADERS = frozenset({"X-Content-SHA256", "X-Filename", "X-Audio-Filename",
                              "X-Audio-Offset-Seconds"})
@@ -163,7 +164,7 @@ class BackendClient:
         return self._request("GET", path, params)
 
     def send_json(self, method: str, path: str, body: Mapping[str, Any] | None = None, *,
-                  if_match: str | None = None) -> tuple[dict[str, Any], str | None]:
+                  if_match: str | None = None, idempotency_key: str | None = None) -> tuple[dict[str, Any], str | None]:
         """One explicit state-changing call (POST, PUT or DELETE). Never retried.
 
         ``if_match`` (PUT only) must be a quoted 64-hex ETag from an earlier read. Error messages
@@ -175,12 +176,16 @@ class BackendClient:
             raise ValueError("If-Match must be one quoted ETag on a PUT")
         if body is not None and method == "DELETE":
             raise ValueError("DELETE takes no body")
+        if idempotency_key is not None and (method != "POST" or not _IDEMPOTENCY.fullmatch(idempotency_key)):
+            raise ValueError("Idempotency-Key must be 8-128 safe characters on a POST")
         data = None
         if body is not None:
             data = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
             if len(data) > MAX_REQUEST_BYTES:
                 raise ValueError("request body too large")
-        return self._request(method, path, None, data, if_match, include_detail=True)
+        extra = {"Idempotency-Key": idempotency_key} if idempotency_key else None
+        return self._request(method, path, None, data, if_match, include_detail=True,
+                             extra_headers=extra)
 
     def upload_bytes(self, path: str, data: bytes, headers: Mapping[str, str]) -> dict[str, Any]:
         """One raw-body POST (source image or soundtrack). Never retried.

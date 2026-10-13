@@ -22,7 +22,7 @@ class StartupSettingsPanel(QWidget):
         title.setObjectName("pageHeading")
         layout.addWidget(title)
         hint = QLabel(
-            "Changes save immediately. Auto-connect takes effect after P4 is implemented. "
+            "Changes save immediately. Auto-connect uses the last successful backend and requires saved trust for HTTP. "
             "Studio never stores bearer credentials here."
         )
         hint.setWordWrap(True)

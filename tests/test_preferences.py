@@ -65,3 +65,43 @@ def test_window_geometry_and_workspace_round_trip(tmp_path, monkeypatch):
     finally:
         win.close()
         assert app is not None
+
+
+def test_http_consent_is_pinned_to_exact_profile_and_url(tmp_path):
+    from PySide6.QtCore import QSettings
+    prefs = StudioPreferences(QSettings(str(tmp_path / "consent.ini"), QSettings.Format.IniFormat))
+    assert not prefs.trusted_http("alpha", "http://host:7866")
+    prefs.set_trusted_http("alpha", "http://host:7866", True)
+    prefs.sync()
+    again = StudioPreferences(QSettings(str(tmp_path / "consent.ini"), QSettings.Format.IniFormat))
+    assert again.trusted_http("alpha", "http://host:7866")
+    assert not again.trusted_http("alpha", "http://other-host:7866")
+    assert not again.trusted_http("beta", "http://host:7866")
+    again.set_trusted_http("alpha", "http://host:7866", False)
+    assert not again.trusted_http("alpha", "http://host:7866")
+
+
+def test_saved_profile_trust_survives_selection(tmp_path):
+    from PySide6.QtCore import QSettings
+    from morphorum_studio.backend.profiles import ProfileStore
+    from morphorum_studio.ui.connections_panel import ConnectionsPanel
+    app = QApplication.instance() or QApplication([])
+    prefs = StudioPreferences(QSettings(str(tmp_path / "ui.ini"), QSettings.Format.IniFormat))
+    panel = ConnectionsPanel(
+        profile_store=ProfileStore(tmp_path / "profiles.json"),
+        preferences=prefs,
+    )
+    try:
+        panel.name.setText("Omen")
+        panel.url.setText("http://127.0.0.1:7866")
+        panel.trust_http.setChecked(True)
+        panel.save_profile()
+        assert panel.trust_http.isChecked()
+        profile = panel.selected()
+        panel.selector.setCurrentIndex(0)
+        panel.select_by_id(profile.id)
+        assert panel.trust_http.isChecked()
+        assert prefs.trusted_http(profile.id, profile.url)
+    finally:
+        panel.close()
+        assert app is not None

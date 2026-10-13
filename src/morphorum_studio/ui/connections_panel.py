@@ -53,6 +53,7 @@ class ConnectionsPanel(QWidget):
         credentials_group = QGroupBox("Client credential")
         credential_layout = QVBoxLayout(credentials_group)
         self.import_button = QPushButton("Browse and import token file…")
+        self.import_button.setObjectName("primaryAction")
         self.import_button.setToolTip("Select a token file from this PC or a trusted mapped share")
         credential_layout.addWidget(self.import_button)
         self.credential_status = QLabel("No token imported for this session.")
@@ -81,7 +82,9 @@ class ConnectionsPanel(QWidget):
         self.new_button = QPushButton("New")
         self.save_button = QPushButton("Save profile")
         self.remove_button = QPushButton("Remove")
+        self.remove_button.setObjectName("dangerAction")
         self.test_button = QPushButton("Connect / Test")
+        self.test_button.setObjectName("primaryAction")
         self.disconnect_button = QPushButton("Disconnect")
         for button in (self.new_button, self.save_button, self.remove_button,
                        self.test_button, self.disconnect_button):

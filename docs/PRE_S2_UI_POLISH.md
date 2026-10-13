@@ -44,3 +44,7 @@ User verified window size/maximized persistence and Settings checkbox persistenc
 ## P2 Windows acceptance (2026-10-12)
 
 **User reports PASS:** Saved trusted-HTTP permission persists across profile save/restart and startup auto-connect now reconnects as configured; window size/state and Settings checkbox persistence had already passed. Windows/Linux CI for fix commit `3d0ffbe2260433ef43c17c063bea158fc955e07e` both succeeded. P2 plus early P4 behavioral fixes physically accepted. Proceed with P3 branded startup splash. 
+
+## P3 splash implementation candidate (2026-10-12)
+
+Code committed on dev-ui: `ui/splash.py` implements a 560x430 QSplashScreen, with three stage-driven progress-bar updates and concise status labels during actual startup work. GUI appears immediately after initialization; background auto-connect remains asynchronous and never holds splash open. `app.py` respects the persisted `show_splash` toggle. A 410x308 maximum logo view is applied with smooth scaling. The code looks for user logo at `assets/morphorum-studio-logo.png` relative to repository root; if missing, a compact text-only fallback displays. **Logo bytes are not yet bundled in GitHub**, so image-branded splash physical acceptance remains pending. CI and actual Windows testing also remain pending. Keep P3 unaccepted until the asset and test are verified.

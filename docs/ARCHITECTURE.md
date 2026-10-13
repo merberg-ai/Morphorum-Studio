@@ -1,5 +1,23 @@
 # Morphorum Studio architecture contract
 
+## Current implementation boundary (verified 2026-10-13)
+
+This file describes both **implemented** components and **future** components. The original "Planned packages" tree below is historical guidance, not a directory listing. For exact present code and current branches consult [HANDOFF.md](HANDOFF.md) and fetch dev-ui.
+
+Implemented on Studio **dev-ui**:
+- Native Qt bootstrap/splash: app.py, ui/splash.py, package artwork in src/morphorum_studio/assets/splash-logo.jpg.
+- Desktop shell: ui/main_window.py, ui/theme.py, nine workspaces; only Connections and Settings have real milestone interfaces.
+- Session preferences: ui/preferences.py (QSettings, nonsecret), ui/startup_settings.py (visible settings controls), window geometry/workspace/last selected+successful connection persistence.
+- Secure connection: backend/client.py (discovery HTTP), backend/worker.py (off-thread QRunnable), backend/profiles.py (nonsecret JSON profiles), backend/credentials.py (OS keyring), ui/connections_panel.py (credential import, consent, identity, status, passive monitoring/reconnect).
+- CI/read-only wheel smoke: tests/* and scripts/verify_clean_install.py.
+
+**S2 architectural decision needed before coding:** other workspaces require telemetry and models via a shared authenticated connection context. Currently ConnectionsPanel owns the active profile, probes, and reconnect state. Do not give individual pages their own keyring lookups and duplicate health pollers. Extract a reusable session/data boundary, publish signals or typed snapshots from worker threads, and ensure profile switch/disconnect invalidates all pending requests. Keep network off the Qt event loop.
+
+**Two security distinctions:** QSettings trusted-HTTP approval means the user explicitly accepted sending credentials over **unencrypted** HTTP to that exact profile URL, not that the host is cryptographically verified. instance_id detects unexpected backend changes but is not TLS identity; an unfamiliar instance still requires independent user approval.
+
+---
+
+
 ## System boundary
 
 ```text
@@ -49,7 +67,7 @@ tests/
 docs/
 ```
 
-In S0, only the files present in GitHub actually exist. The future directories above are **planned**, not delivered.
+The example tree above originated during S0. Implemented S1/pre-S2 modules now exist as listed at the top of this file. Future project/editor/job/media modules are **planned** and must not be represented as implemented.
 
 ## API and job lifecycle invariants
 

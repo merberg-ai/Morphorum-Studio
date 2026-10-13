@@ -194,3 +194,6 @@ See docs/S3_3_VIDEO.md. Stacked on feature/studio-s3-2-animation. Export section
 
 ## S4.1 timeline viewer (branch feature/studio-s4-1-timeline)
 See docs/S4_1_TIMELINE.md. From dev-ui (S1-S3.3 + console merged). Read-only Editor page: lanes, scrubbing, backend-resolved values and curves. Awaiting CI and a physical Windows test. Nothing merged beyond dev-ui.
+
+## S4.2 keyframe editing (branch feature/studio-s4-2-keyframes)
+See docs/S4_2_KEYFRAMES.md. From dev-ui (S4.1 merged). Set/update/delete/move keyframes and interpolation via the backend track endpoints with an ETag guard before each edit, backend reload after, and Studio-side undo/redo. Awaiting CI and a physical Windows test.

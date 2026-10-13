@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
@@ -20,7 +21,17 @@ from PySide6.QtWidgets import (
 )
 
 from morphorum_studio.backend.session import BackendSession
-from morphorum_studio.backend.timeline import Resolved, Series, Timeline
+from morphorum_studio.backend.timeline import (
+    EditError,
+    Resolved,
+    Series,
+    Timeline,
+    keyframe_at,
+    plan_delete,
+    plan_interpolation,
+    plan_move,
+    plan_set,
+)
 from morphorum_studio.ui.projects_service import ProjectsService
 from morphorum_studio.ui.timeline_service import TimelineService
 from morphorum_studio.ui.timeline_view import CurveView, TimelineView
@@ -61,6 +72,8 @@ class EditorPage(QWidget):
         service.failed.connect(self._failed)
         service.busy_changed.connect(lambda _b: self._update())
         service.cleared.connect(self._cleared)
+        service.edited.connect(self._edited)
+        service.history_changed.connect(self._update_edit_controls)
         session.changed.connect(self._update)
         self._update()
 
@@ -128,17 +141,49 @@ class EditorPage(QWidget):
         self.keys.verticalHeader().setVisible(False)
         self.keys.horizontalHeader().setStretchLastSection(True)
         self.keys.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.keys.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.keys.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         right.addWidget(self.keys, 1)
+        self.value_edit = QPlainTextEdit()
+        self.value_edit.setPlaceholderText("Keyframe value (number, expression such as 1+0.5*sin(t), or prompt text)")
+        self.value_edit.setMaximumHeight(64)
+        right.addWidget(self.value_edit)
+        edit_row = QHBoxLayout()
+        edit_row.setSpacing(6)
+        self.set_button = QPushButton("Set at playhead")
+        self.update_button = QPushButton("Update selected")
+        self.delete_button = QPushButton("Delete")
+        self.move_button = QPushButton("Move to playhead")
+        self.interp = QComboBox()
+        self.undo_button = QPushButton("Undo")
+        self.redo_button = QPushButton("Redo")
+        for widget in (self.set_button, self.update_button, self.delete_button, self.move_button,
+                       self.interp, self.undo_button, self.redo_button):
+            if isinstance(widget, QPushButton):
+                widget.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            edit_row.addWidget(widget)
+        edit_row.addStretch(1)
+        right.addLayout(edit_row)
+        self.edit_status = _label("", "hint", wrap=True)
+        right.addWidget(self.edit_status)
         lower.addLayout(right, 1)
         box.addLayout(lower, 2)
-        box.addWidget(_label("Read-only view: values and curves are evaluated by the backend. "
-                             "Editing arrives in the next step.", "hint", wrap=True))
+        box.addWidget(_label("Values and curves are evaluated by the backend. Each edit is saved to the "
+                             "backend immediately and can be undone here.", "hint", wrap=True))
 
         self.project.activated.connect(self._project_chosen)
         self.reload.clicked.connect(self._reload)
         self.frame_spin.valueChanged.connect(self._spin_changed)
         self.view.frame_changed.connect(self._view_frame)
         self.view.track_selected.connect(self._track_selected)
+        self.keys.currentCellChanged.connect(lambda *_: self._key_selected())
+        self.set_button.clicked.connect(self._set_at_playhead)
+        self.update_button.clicked.connect(self._update_selected)
+        self.delete_button.clicked.connect(self._delete_selected)
+        self.move_button.clicked.connect(self._move_selected)
+        self.interp.activated.connect(self._interp_chosen)
+        self.undo_button.clicked.connect(self._undo)
+        self.redo_button.clicked.connect(self._redo)
 
     # -- state --------------------------------------------------------------------------
 
@@ -165,6 +210,7 @@ class EditorPage(QWidget):
         ready = self._service.available
         self.project.setEnabled(ready)
         self.reload.setEnabled(ready and self.project.currentData() is not None)
+        self._update_edit_controls()
 
     def _listed(self, summaries) -> None:
         current = self.project.currentData()
@@ -246,6 +292,7 @@ class EditorPage(QWidget):
     def _frame_moved(self, frame: int) -> None:
         self.curve.set_frame(frame)
         self._show_frame_label(frame)
+        self._update_edit_controls()
         self._debounce.start()
 
     def _resolved(self, resolved: Resolved) -> None:
@@ -278,6 +325,8 @@ class EditorPage(QWidget):
         for row, key in enumerate(track.keyframes):
             self.keys.setItem(row, 0, QTableWidgetItem(key.expression or str(key.frame)))
             self.keys.setItem(row, 1, QTableWidgetItem(key.value))
+        self._show_interpolation()
+        self._update_edit_controls()
         if track.kind == "numeric" and track.field:
             self.curve.show_message("Loading curve…")
             self._service.request_series(track_id)
@@ -295,5 +344,113 @@ class EditorPage(QWidget):
         self.curve.set_frame(self.view.frame)
 
     def _failed(self, operation: str, code: str, message: str) -> None:
+        if operation == "edit":
+            self.edit_status.setText(f"Edit failed: {message}")
+            self._update_edit_controls()
+            return
         self._error = f"{operation.capitalize()} failed: {message}"
+        self._update()
+
+    # -- editing (S4.2) -----------------------------------------------------------------
+
+    def _track(self):
+        return self._timeline.track(self._track_id) if self._timeline and self._track_id else None
+
+    def _selected_frame(self) -> int | None:
+        track, row = self._track(), self.keys.currentRow()
+        return track.keyframes[row].frame if track and 0 <= row < len(track.keyframes) else None
+
+    def _update_edit_controls(self) -> None:
+        track, can = self._track(), self._service.can_edit
+        selected = self._selected_frame()
+        self.value_edit.setEnabled(bool(track) and can)
+        self.set_button.setEnabled(bool(track) and can)
+        self.update_button.setEnabled(can and selected is not None)
+        self.delete_button.setEnabled(can and selected is not None)
+        self.move_button.setEnabled(can and selected is not None and selected != self.view.frame)
+        self.interp.setEnabled(bool(track) and can and bool(track.modes if track else False))
+        undo, redo = self._service.undo_label, self._service.redo_label
+        self.undo_button.setEnabled(can and undo is not None)
+        self.redo_button.setEnabled(can and redo is not None)
+        self.undo_button.setToolTip(f"Undo: {undo}" if undo else "Nothing to undo")
+        self.redo_button.setToolTip(f"Redo: {redo}" if redo else "Nothing to redo")
+
+    def _key_selected(self) -> None:
+        track, row = self._track(), self.keys.currentRow()
+        if track and 0 <= row < len(track.keyframes):
+            self.value_edit.setPlainText(track.keyframes[row].value)
+        self._update_edit_controls()
+
+    def _show_interpolation(self) -> None:
+        track = self._track()
+        self.interp.blockSignals(True)
+        self.interp.clear()
+        for mode in (track.modes if track else ()):
+            self.interp.addItem(mode.capitalize(), mode)
+        if track:
+            self.interp.setCurrentIndex(max(0, self.interp.findData(track.interpolation)))
+        self.interp.blockSignals(False)
+
+    def _try(self, planner) -> None:
+        self.edit_status.setText("")
+        try:
+            edit = planner()
+        except EditError as exc:
+            self.edit_status.setText(str(exc))
+            return
+        self._service.apply(edit)
+
+    def _set_at_playhead(self) -> None:
+        track, timeline = self._track(), self._timeline
+        if track and timeline:
+            self._try(lambda: plan_set(track, self.view.frame, self.value_edit.toPlainText(),
+                                       timeline.max_frames))
+
+    def _update_selected(self) -> None:
+        track, timeline, frame = self._track(), self._timeline, self._selected_frame()
+        if track and timeline and frame is not None:
+            self._try(lambda: plan_set(track, frame, self.value_edit.toPlainText(), timeline.max_frames))
+
+    def _delete_selected(self) -> None:
+        track, timeline, frame = self._track(), self._timeline, self._selected_frame()
+        if track and timeline and frame is not None:
+            self._try(lambda: plan_delete(track, frame, timeline.max_frames))
+
+    def _move_selected(self) -> None:
+        track, timeline, frame = self._track(), self._timeline, self._selected_frame()
+        if not (track and timeline and frame is not None):
+            return
+        target = self.view.frame
+        overwrite = False
+        if keyframe_at(track, target) is not None:
+            answer = QMessageBox.question(
+                self, "Replace keyframe?",
+                f"There is already a keyframe at frame {target}. Replace it? (Undo restores it.)")
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            overwrite = True
+        self._try(lambda: plan_move(track, frame, target, timeline.max_frames, overwrite))
+
+    def _interp_chosen(self, _index: int) -> None:
+        track = self._track()
+        if track:
+            self._try(lambda: plan_interpolation(track, self.interp.currentData()))
+            self._show_interpolation()  # snap back until the backend confirms
+
+    def _undo(self) -> None:
+        self.edit_status.setText(f"Undoing: {self._service.undo_label}")
+        self._service.undo()
+
+    def _redo(self) -> None:
+        self.edit_status.setText(f"Redoing: {self._service.redo_label}")
+        self._service.redo()
+
+    def _edited(self, timeline: Timeline) -> None:
+        """The backend confirmed and Studio reloaded: redraw from what it holds now."""
+        self._timeline = timeline
+        self.view.set_timeline_keep_frame(timeline)
+        if self._track_id and timeline.track(self._track_id):
+            self._track_selected(self._track_id)
+        self.edit_status.setText("Saved.")
+        self._service.request_frame(self.view.frame)
         self._update()

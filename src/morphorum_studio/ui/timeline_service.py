@@ -9,10 +9,9 @@ from __future__ import annotations
 
 from PySide6.QtCore import QObject, Signal
 
-from morphorum_studio.backend.client import BackendClient
-from morphorum_studio.backend.projects import ProjectsApi
+from morphorum_studio.backend.client import BackendClient, BackendError
 from morphorum_studio.backend.session import BackendSession
-from morphorum_studio.backend.timeline import Series, Timeline, TimelineApi
+from morphorum_studio.backend.timeline import Edit, EditApi, Op, Series, Timeline, TimelineApi
 from morphorum_studio.ui.dashboard_service import Runner, thread_pool_runner
 
 
@@ -20,6 +19,9 @@ class TimelineService(QObject):
     loaded = Signal(object)  # Timeline
     series_ready = Signal(str, object)  # track id, Series | None (None: the backend refused)
     resolved = Signal(object)  # Resolved
+    edited = Signal(object)  # Timeline reloaded from the backend after an edit, undo or redo
+    history_changed = Signal()
+    conflict = Signal(str)  # the project changed elsewhere; edits were refused
     failed = Signal(str, str, str)  # operation, code, message
     busy_changed = Signal(bool)
     cleared = Signal()
@@ -36,6 +38,10 @@ class TimelineService(QObject):
         self.timeline: Timeline | None = None
         self._raw: dict | None = None
         self._series: dict[str, Series | None] = {}
+        self._project_id: str | None = None
+        self._etag: str | None = None
+        self._undo: list[Edit] = []
+        self._redo: list[Edit] = []
         session.changed.connect(self._session_changed)
 
     @property
@@ -69,8 +75,17 @@ class TimelineService(QObject):
         self._frame_seq += 1
         self.timeline = None
         self._raw = None
+        self._project_id = None
+        self._etag = None
         self._series.clear()
+        self._clear_history()
         self._set_busy(False)
+
+    def _clear_history(self) -> None:
+        if self._undo or self._redo:
+            self._undo.clear()
+            self._redo.clear()
+            self.history_changed.emit()
 
     # -- loading ------------------------------------------------------------------------
 
@@ -83,7 +98,10 @@ class TimelineService(QObject):
         self._set_busy(True)
 
         def work(c: BackendClient):
-            return TimelineApi(c).timeline(project_id), ProjectsApi(c).raw(project_id)
+            api = EditApi(c)
+            timeline = api.timeline(project_id)
+            raw, etag = api.project_revision(project_id)
+            return timeline, raw, etag
 
         def done(result, error):
             if self._stale(epoch, seq):
@@ -92,7 +110,8 @@ class TimelineService(QObject):
             if error:
                 self.failed.emit("load", *error)
                 return
-            self.timeline, self._raw = result
+            self.timeline, self._raw, self._etag = result
+            self._project_id = project_id
             self.loaded.emit(self.timeline)
 
         self._run(client, work, done)
@@ -143,3 +162,81 @@ class TimelineService(QObject):
                 self.resolved.emit(result)
 
         self._run(client, lambda c: TimelineApi(c).resolve(raw, frame, timeline), done)
+
+    # -- editing (S4.2) -----------------------------------------------------------------
+
+    @property
+    def can_edit(self) -> bool:
+        return (self.available and self.timeline is not None and self._etag is not None
+                and not self._busy)
+
+    @property
+    def undo_label(self) -> str | None:
+        return self._undo[-1].label if self._undo else None
+
+    @property
+    def redo_label(self) -> str | None:
+        return self._redo[-1].label if self._redo else None
+
+    def apply(self, edit: Edit) -> None:
+        self._execute(edit.forward, edit, "do")
+
+    def undo(self) -> None:
+        if self._undo and self.can_edit:
+            edit = self._undo[-1]
+            self._execute(edit.inverse, edit, "undo")
+
+    def redo(self) -> None:
+        if self._redo and self.can_edit:
+            edit = self._redo[-1]
+            self._execute(edit.forward, edit, "redo")
+
+    def _execute(self, ops: tuple[Op, ...], edit: Edit, direction: str) -> None:
+        project_id, etag = self._project_id, self._etag
+        client = self._client(30.0)
+        if not self.can_edit or client is None or project_id is None:
+            return
+        seq, epoch = self._seq, self._session.epoch
+        self._set_busy(True)
+
+        def work(c: BackendClient):
+            api = EditApi(c)
+            _, current = api.project_revision(project_id)
+            if current != etag:
+                raise BackendError("PROJECT_CHANGED",
+                                   "The project changed elsewhere since it was loaded. Reload before editing.")
+            for op in ops:
+                api.run(project_id, op)
+            timeline = api.timeline(project_id)
+            raw, new_etag = api.project_revision(project_id)
+            return timeline, raw, new_etag
+
+        def done(result, error):
+            if self._stale(epoch, seq):
+                return
+            self._set_busy(False)
+            if error:
+                # Whatever happened, the backend may now differ from what Studio holds: the
+                # undo history no longer describes it, so drop it and let the page reload.
+                refused = error[0] in ("INVALID_REQUEST", "VALIDATION_ERROR") and len(ops) == 1
+                if not refused:
+                    self._clear_history()
+                if error[0] == "PROJECT_CHANGED":
+                    self.conflict.emit(error[1])
+                self.failed.emit("edit", *error)
+                if not refused:
+                    self.load(project_id)  # show what the backend really holds now
+                return
+            self.timeline, self._raw, self._etag = result
+            self._series.clear()
+            if direction == "do":
+                self._undo.append(edit)
+                self._redo.clear()
+            elif direction == "undo":
+                self._redo.append(self._undo.pop())
+            else:
+                self._undo.append(self._redo.pop())
+            self.history_changed.emit()
+            self.edited.emit(self.timeline)
+
+        self._run(client, work, done)

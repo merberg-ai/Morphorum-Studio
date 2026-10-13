@@ -1,6 +1,6 @@
 # Morphorum Studio development roadmap
 
-**Baseline:** S0 initial PySide6 shell, 2026-10-12. **Primary target:** Windows native application. **Secondary:** Linux desktop. **Source of rendering truth:** Morphorum `dev-backend` API contract 1.
+**Current state (2026-10-13):** S0 Windows-verified; S1 connection manager and pre-S2 polish implemented on **Studio dev-ui** and physically tested in increments. **S2.1 is next and NOT started.** Latest checked source SHA `f91b3e6` passed Windows + Ubuntu CI after JPEG re-encode. Studio `main` remains intentionally S0, backend `main` remains intentionally unmerged. See [HANDOFF.md](HANDOFF.md) for detailed live state, acceptance limitations, branch policy and immediate tasks.
 
 This is the canonical implementation/acceptance plan for future sessions. Treat each phase as incremental, with CI and **physical Windows testing before declaring it verified**. Use dedicated feature branches; preserve physical-acceptance checkpoint refs.
 
@@ -22,34 +22,52 @@ Deliverables:
 
 ## S1. Backend connections, security and native service layer
 
-**S1.1 HTTP transport foundation (implemented on feature branch; live acceptance pending)**
+**S1.1 HTTP transport foundation (implemented, CI + live LAN exercised)**
 - [x] Typed `BackendClient` and `BackendError` with bounded timeouts, explicit status handling, URL normalization, redirect rejection and stable error codes.
 - [x] Authenticated `GET /api/health` and `GET /api/client/capabilities`; strictly require contract version 1 and validate modes/features.
 - [x] Mock/fake-HTTP tests covering 401, 403, 409, 412, unknown API, redirects, timeouts, malformed JSON.
-- [ ] No Qt network calls on GUI thread; worker tasks emit signals and support cancellation (deferred to S1.2; transport is not wired to UI).
+- [x] Discovery requests execute via Qt QRunnable workers off GUI thread; epoch invalidation discards late results after disconnect. Actual low-level network cancellation is not yet implemented.
 
-**S1.2 Connection Manager UX**\n- [x] Initial Windows/Linux setup, fast-forward-only update, and native launch scripts delivered with S1.1; test on physical Windows before acceptance.
-- Named connection profiles: label, URL, pinned `instance_id`, last `boot_id`, preferred transport. Persist profiles **without secrets**.
-- OS Credential Manager/secure keyring for per-client bearer tokens. Support interactive token entry or trusted local provisioning; avoid embedding a real token in test fixtures.
-- UI connection panel: add/edit/test/remove, connection status, capabilities/version, local/remote context, troubleshoot.
-- Explicit warning before transmitting secrets over plaintext HTTP on untrusted networks. Do not implement speculative network pairing; backend provides local-host admin `clients issue/list/revoke`.
-- Correct handling of revoked tokens and backend instance mismatch. Reconnect after process restart and refresh capability flags.
-- Never kill a remote backend when closing Studio. A user-started local backend is also not owned by Studio.
+**S1.2 Connection Manager UX (implemented on dev-ui)**
+- [x] Initial Windows/Linux setup, fast-forward-only update, and native launch scripts delivered with S1.1; test on physical Windows before acceptance.
+- [x] Named connection profiles: label, URL, pinned `instance_id`, last `boot_id`, preferred transport. Persist profiles **without secrets**.
+- [x] OS Credential Manager/secure keyring for per-client bearer tokens. Support interactive token entry or trusted local provisioning; avoid embedding a real token in test fixtures.
+- [x] UI connection panel: add/edit/test/remove, connection status, capabilities/version, local/remote context, troubleshoot.
+- [x] Explicit warning before transmitting secrets over plaintext HTTP on untrusted networks. Do not implement speculative network pairing; backend provides local-host admin `clients issue/list/revoke`.
+- [x] Correct handling of revoked tokens and backend instance mismatch. Reconnect after process restart and refresh capability flags.
+- [x] Never kill a remote backend when closing Studio. A user-started local backend is also not owned by Studio.
 
-**S1 physical acceptance on Windows Omen + Studio client**
-- [ ] Connect to running `dev-backend` over a trusted LAN using a dedicated client token and display actual hardware/capabilities.
-- [ ] Wrong token/revoked token rejected; no secret leak to logs/config/clipboard.
-- [ ] Backend restart changes boot ID but not installation identity; UI recovers.
-- [ ] Wrong instance ID requires explicit confirmation. No automatic trust of another server.
-- [ ] No UI freezes when backend is offline/slow; status changes meaningfully.
-- [ ] Tests/CI pass; create verified S1 checkpoint.
+**S1 and pre-S2 acceptance evidence**
+
+- [x] User physically connected authenticated Studio over trusted LAN with host-issued revocable token.
+- [x] User physically exercised backend stop/restart, boot change, automatic reconnect, manual disconnect and status changes.
+- [x] User physically reported disposable token revocation produces BACKEND UNAUTHORIZED and stops retrying; separate mocked wrong-token/403 cases are in tests.
+- [x] Identity mismatch **rejection** in automated Qt tests preserves previously pinned host; **not physically tested against a second real backend**.
+- [x] OS keyring stores secrets; persisted profile JSON and QSettings hold only nonsecret data. This is an implementation property and tested behavior, not a formal penetration audit.
+- [x] Windows/Ubuntu CI on S1 increment; S1 reconnect checkpoint recorded. P1 theme, P2 settings/geometry/last profile, P3 splash, early P4 auto-connect/HTTP consent accepted by user on Windows.
+- [x] Optimized branded logo included in wheel; fresh-wheel install and warning-free Qt JPEG decoder checks passed on Windows/Ubuntu CI at f91b3e6.
+- [ ] Last manual Windows recheck of **corrected** JPEG (no terminal warning) has not been explicitly documented; user stated current state is sufficient and paused.
+- [ ] Higher-DPI/multimonitor/slow backend startup tests and physical second-instance mismatch approval remain optional/future hardening. No claim of full comprehensive security acceptance.
+- [ ] No main merge or replacement of earlier immutable checkpoint without explicit user approval.
+
+**Pre-S2 details:** [PRE_S2_UI_POLISH.md](PRE_S2_UI_POLISH.md). An older pre-S2 checkpoint (`aa7e798`) **predates** the JPEG re-encode; current source is dev-ui. P1–P4 application functionality is in place; do not restart it from S0.
 
 ## S2. Models, projects and media assets
 
-**S2.1 Model discovery and dashboard**
-- Display real backend model IDs for SDXL, FLUX and Z-Image, with installed/downloadable status and dynamic generation defaults. No local model scanning.
-- Dashboard CPU/GPU/RAM/VRAM, backend status and console snippet; throttle telemetry refresh without UI jank.
-- Model family changes update valid sampler/CFG/resolution choices according to backend capability, not hardcoded defaults.
+**S2.1 Model discovery and dashboard (NOT STARTED, next proposed milestone)**
+
+Incremental implementation order (stop for user review before GPU operations):
+- [ ] Confirm dev-ui head/CI and live dev-backend API schema/feature flags; agree on branch from current dev-ui. S2 must not be written to Studio main automatically.
+- [ ] Extract a reusable authenticated connection/session read facade for pages besides Connections; preserve existing manual disconnect, automatic reconnect, HTTP consent, keyring, instance/boot-ID behavior. Avoid a second independent connection poller.
+- [ ] Add **typed, read-only** backend API for GET /api/system/telemetry and /api/system/gpu-memory with bounded timeouts. Respect exact response schema, missing fields, real GPU/VRAM units and hardware identification; never fabricate values.
+- [ ] Add GET /api/models/families and GET /api/models?family=... endpoints; extend safe query handling of BackendClient, which currently rejects query strings. Use supported backend dynamic defaults and family flags. Do not scan client filesystem for models.
+- [ ] Offload telemetry/model requests to background Qt workers. Bounded refresh interval and transient error handling must not stall GUI; stop or rebind polling on disconnect, profile change and different instance/boot.
+- [ ] Replace Home placeholder with real connected/offline dashboard cards (CPU, GPU, RAM, VRAM, backend version/mode, useful model inventory). Provide accessible unavailable/unknown states. No cosmetic zeroes or fake bars.
+- [ ] Add native model inventory and family selector when API data is available; changing families should reflect backend-validated sampler/CFG/resolution defaults. Do **not** expose a button that claims to load/run a model until a real supported endpoint exists.
+- [ ] Mock authenticated success/failures, missing GPU, malformed data, auth rejection, invalid query, reconnect and stale worker completions. Both Windows/Ubuntu CI must pass exact SHA.
+- [ ] Stop for **user physical Windows test** with backend online/offline and at least one installed model from each applicable family. Only then checkpoint/merge with explicit approval.
+
+**S2.1 exit:** Live metrics and model metadata are real, useful and resilient, with no local GPU dependencies. Console stream and more advanced diagnostic UI may wait for S3 where appropriate.
 
 **S2.2 Project Browser / revision-safe editing**
 - List/search/create/open/trash project, project metadata, recent renders.

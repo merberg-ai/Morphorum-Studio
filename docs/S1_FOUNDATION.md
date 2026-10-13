@@ -1,5 +1,13 @@
 # Morphorum Studio S1.1 foundation
 
+## CURRENT STATUS (2026-10-13)
+
+**This document started as a historical S1.1 guide.** S1.2 and the follow-on connection reliability features have now been implemented on Studio **dev-ui**, physically tested on a Windows LAN client, and documented in [HANDOFF.md](HANDOFF.md). The statements below that refer to "UI still offline", "client not wired", or "S1.2 will add" describe the earlier S1.1 milestone **at that point in history**, not current functionality. In current dev-ui, Connections is live, bearer tokens use OS keyring, QThreadPool handles network discovery, status monitors backend health/reconnect, and startup auto-connect can be enabled in Settings.
+
+**Latest checked implementation:** f91b3e6, Windows+Ubuntu CI green. Use dev-ui; Studio main remains an S0-only scaffold. Backend main is deliberately held. Do not merge either repository without explicit user approval.
+
+---
+
 S0 Windows physical acceptance: PASS (user report, 2026-10-12).
 Immutable branch: `checkpoint/studio-s0-windows-verified-20261012`.
 
@@ -29,7 +37,7 @@ For developer tests, install `-e ".[dev]"` into the virtualenv and run `python -
 
 `morphorum_studio.backend.client.BackendClient` currently provides **non-Qt** discovery for the existing backend `GET /api/health` and `GET /api/client/capabilities` endpoints. It uses bounded timeouts, optional bearer Authorization, URL validation, strict contract/schema 1 checks, identity + boot ID parsing, dynamic feature flags, redirect refusal and stable errors. Pure mock tests never contact a live GPU host.
 
-**Important:** The transport is synchronous, so it is deliberately **not invoked from the Qt UI thread**. The GUI still shows BACKEND OFFLINE. S1.2 adds secure keyring storage, named profiles, host identity approval and cancellable Qt worker/UI binding. A real bearer token must not be committed or placed into scripts, logs, query strings or test fixtures. Plain HTTP is appropriate only on a trusted LAN or secure tunnel.
+**Historical S1.1 context:** The transport itself is synchronous. Current dev-ui correctly calls it through Qt background QRunnable workers (with epoch invalidation on disconnect); network work is not on the GUI thread. S1.2 later implemented OS keyring storage, named profiles and identity approval. Never commit a real bearer token or place it in scripts, logs, query strings or test fixtures. Plain HTTP is appropriate only on a trusted LAN or secure tunnel.
 
 This milestone is a foundation, not a claim of live Studio-to-backend connection acceptance. Stop for Windows physical smoke tests and CI review before merging.
 

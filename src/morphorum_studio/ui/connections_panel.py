@@ -4,7 +4,7 @@ from __future__ import annotations
 from urllib.parse import urlsplit
 from pathlib import Path
 
-from PySide6.QtCore import QThreadPool, Signal, Qt
+from PySide6.QtCore import QThreadPool, Signal, QTimer
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
     QMessageBox, QPushButton, QVBoxLayout, QWidget, QFileDialog, QGroupBox
@@ -26,6 +26,11 @@ class ConnectionsPanel(QWidget):
         self.profiles = self.store.load()
         self._busy = False
         self._worker = None
+        self._epoch = 0
+        self._connected_profile = None
+        self._monitor = QTimer(self)
+        self._monitor.setInterval(15000)
+        self._monitor.timeout.connect(self._monitor_tick)
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("BACKEND CONNECTIONS / STUDIO"))
         layout.addWidget(QLabel("Connect to an existing Morphorum GPU backend. No local GPU needed."))
@@ -110,6 +115,8 @@ class ConnectionsPanel(QWidget):
         return next((p for p in self.profiles if p.id == key), None)
 
     def select_profile(self, index):
+        if self._connected_profile is not None:
+            self.disconnect()
         p = self.selected()
         self.name.setText(p.name if p else "")
         self.url.setText(p.url if p else "")
@@ -131,6 +138,8 @@ class ConnectionsPanel(QWidget):
         self.disconnect()
 
     def save_profile(self):
+        if self._connected_profile is not None:
+            self.disconnect()
         if self._busy:
             return
         try:
@@ -227,25 +236,61 @@ class ConnectionsPanel(QWidget):
             if answer != QMessageBox.StandardButton.Yes:
                 return
             self.trust_http.setChecked(True)
+        self._probe(p, token, monitoring=False)
+
+    def _probe(self, profile, token, *, monitoring):
         self._busy = True
         self.test_button.setEnabled(False)
-        self.details.setText("Connecting in background…")
-        self.status_changed.emit("BACKEND CONNECTING")
-        worker = DiscoveryWorker(p.url, token)
+        if not monitoring:
+            self.details.setText("Connecting in background…")
+            self.status_changed.emit("BACKEND CONNECTING")
+        self._epoch += 1
+        epoch = self._epoch
+        worker = DiscoveryWorker(profile.url, token)
         self._worker = worker
-        profile_id = p.id
         worker.signals.completed.connect(
-            lambda result, error: self._discovery_done(profile_id, result, error)
+            lambda result, error: self._discovery_done(
+                profile.id, epoch, monitoring, result, error
+            )
         )
         QThreadPool.globalInstance().start(worker)
 
-    def _discovery_done(self, profile_id, result, error):
+    def _monitor_tick(self):
+        if self._busy or not self._connected_profile:
+            return
+        p = next((x for x in self.profiles if x.id == self._connected_profile), None)
+        if p is None:
+            self.disconnect()
+            return
+        try:
+            token = self.vault.get(p.id)
+        except RuntimeError:
+            self._monitor.stop()
+            self._connected_profile = None
+            self.details.setText("Credential store unavailable. Reconnect manually.")
+            self.status_changed.emit("BACKEND OFFLINE")
+            return
+        self._probe(p, token, monitoring=True)
+
+    def _discovery_done(self, profile_id, epoch, monitoring, result, error):
+        if epoch != self._epoch:
+            return  # Late response after disconnect or another request.
         self._busy = False
         self.test_button.setEnabled(True)
         self._worker = None
         if error:
-            self.details.setText(f"{error[0]}: {error[1]}")
-            self.status_changed.emit("BACKEND OFFLINE")
+            self._monitor.stop()
+            self._connected_profile = None
+            code, message = error
+            if code in ("AUTH_REQUIRED", "FORBIDDEN"):
+                self.details.setText("Authentication rejected. Check or reimport client token.")
+                self.status_changed.emit("BACKEND UNAUTHORIZED")
+            elif code == "INCOMPATIBLE_API":
+                self.details.setText("Incompatible backend API. Update backend or Studio.")
+                self.status_changed.emit("BACKEND INCOMPATIBLE")
+            else:
+                self.details.setText(f"{code}: {message}. Use Connect / Test to retry.")
+                self.status_changed.emit("BACKEND OFFLINE")
             return
         p = next((x for x in self.profiles if x.id == profile_id), None)
         if p is None:
@@ -262,7 +307,10 @@ class ConnectionsPanel(QWidget):
                 QMessageBox.StandardButton.No,
             )
             if answer != QMessageBox.StandardButton.Yes:
-                self.disconnect()
+                self._monitor.stop()
+                self._connected_profile = None
+                self.status_changed.emit("BACKEND IDENTITY MISMATCH")
+                self.details.setText("Identity mismatch rejected. Connection stopped.")
                 return
         changed_boot = bool(p.boot_id and p.boot_id != result.boot_id)
         p.instance_id = result.instance_id
@@ -280,10 +328,19 @@ class ConnectionsPanel(QWidget):
             f"Features enabled: {available}"
             + ("\nBackend restarted: refresh job state before continuing." if changed_boot else "")
         )
+        self._connected_profile = p.id
+        self._monitor.start()
         self.status_changed.emit("BACKEND CONNECTED")
 
     def disconnect(self):
-        if self._busy:
-            return
+        self._monitor.stop()
+        self._connected_profile = None
+        self._epoch += 1  # Ignore results from any in-flight background request.
+        self._busy = False
+        self.test_button.setEnabled(True)
         self.details.setText("Disconnected from Studio (backend remains running).")
         self.status_changed.emit("BACKEND OFFLINE")
+
+    def closeEvent(self, event):
+        self.disconnect()
+        super().closeEvent(event)

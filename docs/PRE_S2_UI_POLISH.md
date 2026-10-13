@@ -40,3 +40,7 @@ P1 visual changes accepted by user. P2 implemented on dev-ui, pending exact-comm
 ## P2 physical feedback and targeted P4 activation (2026-10-12)
 
 User verified window size/maximized persistence and Settings checkbox persistence on Windows. User identified two missing behaviors: auto-connect setting was inert pending P4, and trusted HTTP permission was cleared every time a profile was saved. Implemented early P4 startup auto-connect on `dev-ui`, using the last **successful** profile and QTimer to start after GUI setup. Saved HTTP permission is stored as nonsecret QSettings metadata bound to both profile ID and exact backend URL; changed URL/profile must be explicitly re-approved. Saving a checked box now persists it across runs, and automatically connecting with an unapproved HTTP destination stops safely without prompting at startup. Credentials remain in OS keyring. Actual P4/permission Windows verification and exact-commit CI are still pending. No splash implemented yet: P3 follows physical acceptance of this fix.
+
+## P2 Windows acceptance (2026-10-12)
+
+**User reports PASS:** Saved trusted-HTTP permission persists across profile save/restart and startup auto-connect now reconnects as configured; window size/state and Settings checkbox persistence had already passed. Windows/Linux CI for fix commit `3d0ffbe2260433ef43c17c063bea158fc955e07e` both succeeded. P2 plus early P4 behavioral fixes physically accepted. Proceed with P3 branded startup splash. 

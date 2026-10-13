@@ -4,10 +4,10 @@ from __future__ import annotations
 from urllib.parse import urlsplit
 from pathlib import Path
 
-from PySide6.QtCore import QThreadPool, Signal
+from PySide6.QtCore import QThreadPool, Signal, Qt
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
-    QMessageBox, QPushButton, QVBoxLayout, QWidget, QFileDialog
+    QMessageBox, QPushButton, QVBoxLayout, QWidget, QFileDialog, QGroupBox
 )
 
 from morphorum_studio.backend.client import normalize_base_url
@@ -43,19 +43,34 @@ class ConnectionsPanel(QWidget):
         form.addRow("Backend URL", self.url)
         form.addRow("Bearer token", self.token)
         layout.addLayout(form)
-        self.import_button = QPushButton("Import Token File…")
-        self.import_button.setToolTip("Import a backend-issued client token file into the OS credential store")
-        layout.addWidget(self.import_button)
+        # Provisioning is local: reading/saving a token does not transmit it.
+        credentials_group = QGroupBox("Client credential")
+        credential_layout = QVBoxLayout(credentials_group)
+        self.import_button = QPushButton("Browse and import token file…")
+        self.import_button.setToolTip("Select a token file from this PC or a trusted mapped share")
+        credential_layout.addWidget(self.import_button)
+        self.credential_status = QLabel("No token imported for this session.")
+        self.credential_status.setWordWrap(True)
+        credential_layout.addWidget(self.credential_status)
+        self.trust_http = QCheckBox(
+            "Allow sending this credential over HTTP on my trusted LAN"
+        )
+        credential_layout.addWidget(self.trust_http)
         guide = QLabel(
-            "On the BACKEND host, issue a token with:\n"
-            '  .\\\\.venv\\\\Scripts\\\\python.exe -m morphorum clients issue "Studio PC" --days 90 --out ".\\\\data\\\\studio-client.token"\\n'
-            "Transfer that file securely (USB or authenticated encrypted transfer), then import it here. "
-            "Never put it in a repository or paste it into chat."
+            "1. On the GPU host, issue a client token with the command below.\n"
+            "2. Transfer the token file securely or browse a trusted network share.\n"
+            "3. Import it, then choose Connect / Test."
         )
         guide.setWordWrap(True)
-        layout.addWidget(guide)
-        self.trust_http = QCheckBox("I trust this LAN/loopback or encrypted tunnel for HTTP credentials")
-        layout.addWidget(self.trust_http)
+        credential_layout.addWidget(guide)
+        self.issue_command = QLineEdit(
+            '.\\.venv\\Scripts\\python.exe -m morphorum clients issue '
+            '"Morphorum Studio" --days 90 --out ".\\data\\studio-client.token"'
+        )
+        self.issue_command.setReadOnly(True)
+        self.issue_command.setToolTip("Run this in PowerShell inside the Morphorum backend checkout")
+        credential_layout.addWidget(self.issue_command)
+        layout.addWidget(credentials_group)
         buttons = QHBoxLayout()
         self.new_button = QPushButton("New")
         self.save_button = QPushButton("Save profile")
@@ -99,7 +114,7 @@ class ConnectionsPanel(QWidget):
         self.name.setText(p.name if p else "")
         self.url.setText(p.url if p else "")
         self.token.clear()
-        self.trust_http.setChecked(False)
+        self.trust_http.setChecked(False)\n        self.credential_status.setText("Token stored in OS credential manager" if p and self.vault.get(p.id) else "No saved token for this profile")
 
     def new_profile(self):
         if self._busy:
@@ -125,8 +140,6 @@ class ConnectionsPanel(QWidget):
                     p.boot_id = ""
                 p.name, p.url = name, url
             if self.token.text():
-                if urlsplit(url).scheme == "http" and not self.trust_http.isChecked():
-                    raise ValueError("Confirm trusted HTTP before storing/transmitting a token")
                 self.vault.set(p.id, self.token.text())
             self.store.save(self.profiles)
             self.refresh(p.id)
@@ -144,17 +157,13 @@ class ConnectionsPanel(QWidget):
             QMessageBox.information(self, "Save profile first",
                 "Create and save a named connection before importing its token.")
             return
-        if urlsplit(p.url).scheme == "http" and not self.trust_http.isChecked():
-            QMessageBox.warning(self, "Trusted connection required",
-                "Confirm this is a trusted LAN or encrypted tunnel before importing credentials.")
-            return
         filename, _ = QFileDialog.getOpenFileName(
             self, "Import backend-issued token file", "", "Token files (*.token *.txt);;All files (*)")
         if not filename:
             return
         try:
             path = Path(filename)
-            if not path.is_file() or path.stat().st_size > 8192:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size > 8192:
                 raise ValueError("Token file must be a regular file smaller than 8 KiB")
             token = path.read_text(encoding="utf-8-sig").strip()
             if not token or len(token) > 4096 or any(c.isspace() for c in token):
@@ -164,6 +173,7 @@ class ConnectionsPanel(QWidget):
             QMessageBox.warning(self, "Token import failed", str(exc))
             return
         self.token.clear()
+        self.credential_status.setText("Token imported and securely saved for this profile")
         self.details.setText(
             "Token imported into OS credential storage. The source file was not deleted. "
             "Remove the transfer copy securely when no longer needed, then Connect / Test."
@@ -199,8 +209,16 @@ class ConnectionsPanel(QWidget):
             QMessageBox.warning(self, "Credential store", str(exc))
             return
         if token and urlsplit(p.url).scheme == "http" and not self.trust_http.isChecked():
-            QMessageBox.warning(self, "Unencrypted transport", "Confirm the trusted LAN checkbox before sending credentials over HTTP.")
-            return
+            answer = QMessageBox.warning(
+                self, "Unencrypted connection",
+                "HTTP does not encrypt bearer tokens. Only continue if this is a trusted "
+                "private network or a protected tunnel. Allow this connection?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            self.trust_http.setChecked(True)
         self._busy = True
         self.test_button.setEnabled(False)
         self.details.setText("Connecting in background…")

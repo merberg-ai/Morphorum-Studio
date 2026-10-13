@@ -114,7 +114,8 @@ class ConnectionsPanel(QWidget):
         self.name.setText(p.name if p else "")
         self.url.setText(p.url if p else "")
         self.token.clear()
-        self.trust_http.setChecked(False)\n        try:
+        self.trust_http.setChecked(False)
+        try:
             has_token = bool(p and self.vault.get(p.id))
         except RuntimeError:
             has_token = False

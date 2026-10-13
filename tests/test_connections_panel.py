@@ -67,3 +67,54 @@ def test_import_host_token_file(tmp_path, monkeypatch):
     finally:
         panel.close()
         assert app is not None
+
+
+def test_disconnect_ignores_late_probe_result(tmp_path):
+    from types import SimpleNamespace
+    app = QApplication.instance() or QApplication([])
+    panel = ConnectionsPanel(
+        profile_store=ProfileStore(tmp_path / "profiles.json"),
+        credential_store=FakeVault(),
+    )
+    try:
+        panel.name.setText("Backend")
+        panel.url.setText("http://127.0.0.1:7866")
+        panel.save_profile()
+        profile = panel.selected()
+        panel._epoch = 4
+        panel.disconnect()
+        result = SimpleNamespace(
+            instance_id="a" * 32, boot_id="b" * 32, version="0.1",
+            mode="backend-only", features={"render": True},
+        )
+        panel._discovery_done(profile.id, 4, False, result, None)
+        assert not panel._monitor.isActive()
+        assert panel._connected_profile is None
+        assert "OFFLINE" not in panel.details.text()  # Disconnected message stays.
+        assert not profile.instance_id
+    finally:
+        panel.close()
+        assert app is not None
+
+
+def test_auth_failure_stops_monitor(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    panel = ConnectionsPanel(
+        profile_store=ProfileStore(tmp_path / "profiles.json"),
+        credential_store=FakeVault(),
+    )
+    try:
+        panel.name.setText("Backend")
+        panel.url.setText("http://127.0.0.1:7866")
+        panel.save_profile()
+        profile = panel.selected()
+        panel._connected_profile = profile.id
+        panel._monitor.start()
+        panel._epoch = 10
+        panel._discovery_done(profile.id, 10, True, None, ("AUTH_REQUIRED", "401"))
+        assert not panel._monitor.isActive()
+        assert panel._connected_profile is None
+        assert "Authentication rejected" in panel.details.text()
+    finally:
+        panel.close()
+        assert app is not None

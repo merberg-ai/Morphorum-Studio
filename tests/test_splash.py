@@ -21,3 +21,18 @@ def test_splash_stages_without_network():
     finally:
         splash.close()
         assert app is not None
+
+def test_packaged_logo_decodes_without_qt_jpeg_warnings():
+    from PySide6.QtCore import qInstallMessageHandler
+    from PySide6.QtGui import QPixmap
+
+    app = QApplication.instance() or QApplication([])
+    warnings = []
+    previous = qInstallMessageHandler(lambda mode, context, message: warnings.append(message))
+    try:
+        pixmap = QPixmap(str(splash_logo_path()))
+        assert not pixmap.isNull()
+    finally:
+        qInstallMessageHandler(previous)
+    assert not [message for message in warnings if "jpeg" in message.lower() or "corrupt" in message.lower()]
+    assert app is not None

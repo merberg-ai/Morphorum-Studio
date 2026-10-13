@@ -11,11 +11,11 @@
 - [ ] Refine spacing/controls from real screenshots before checkpoint.
 
 ## P2: persist desktop state (after P1 acceptance)
-- [ ] `QSettings` service for nonsecret application options; credentials remain in OS keyring.
-- [ ] Restore size/position/maximized state, clamp offscreen windows when monitor layout changes.
-- [ ] Restore last selected workspace and last used profile.
-- [ ] Save last **successful** backend profile separately from last **selected** profile.
-- [ ] Native Settings toggles: splash, restore geometry, restore workspace, auto-connect (default off).
+- [x] `QSettings` service for nonsecret application options; credentials remain in OS keyring.
+- [x] Restore size/position/maximized state, clamp offscreen windows when monitor layout changes.
+- [x] Restore last selected workspace and last used profile.
+- [x] Save last **successful** backend profile separately from last **selected** profile.
+- [x] Native Settings toggles: splash, restore geometry, restore workspace, auto-connect (default off).
 
 ## P3: branded splash screen (after P2 acceptance)
 - [ ] Add user-provided Morphorum desktop logo in repository-approved reduced-resolution asset, without changing its artwork.
@@ -32,3 +32,7 @@
 
 ## Operating rules
 Keep changes on `dev-ui`; make small code/test increments and run GitHub Actions on each. Physical acceptance after each pass. No auto-merge to Studio `main`, and no backend `main` merge. After polish acceptance proceed to S2.1.
+
+## P2 candidate notes
+
+P1 visual changes accepted by user. P2 implemented on dev-ui, pending exact-commit CI and Windows physical acceptance. Uses OS-native QSettings for only non-secret window/session preferences; no bearer tokens stored. Auto-connect and splash switches appear now, but their actual startup behaviors are reserved for P4 and P3. Last selected and last successful connection IDs are separate values. Geometry is restored only if enabled; maximize state and last workspace are remembered. If restoring a disconnected-monitor position, window geometry is moved onto an available screen. No implicit network connection occurs in P2.

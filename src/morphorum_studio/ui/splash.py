@@ -1,16 +1,15 @@
 """Small, non-blocking startup splash with real initialization-stage labels."""
 from __future__ import annotations
 
-from pathlib import Path
+from importlib.resources import files
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
 from PySide6.QtWidgets import QSplashScreen
 
 
-def splash_logo_path() -> Path:
-    # Source checkouts can supply the original logo here; packaged builds use importlib.resources later.
-    return Path(__file__).resolve().parents[3] / "assets" / "morphorum-studio-logo.png"
+def splash_logo_path():
+    return files("morphorum_studio").joinpath("assets", "splash-logo.jpg")
 
 
 class StudioSplash(QSplashScreen):

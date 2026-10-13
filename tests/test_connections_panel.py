@@ -118,3 +118,28 @@ def test_auth_failure_stops_monitor(tmp_path):
     finally:
         panel.close()
         assert app is not None
+
+
+def test_network_outage_retries_without_reauthentication_prompt(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    panel = ConnectionsPanel(
+        profile_store=ProfileStore(tmp_path / "profiles.json"),
+        credential_store=FakeVault(),
+    )
+    try:
+        panel.name.setText("Omen")
+        panel.url.setText("http://127.0.0.1:7866")
+        panel.save_profile()
+        profile = panel.selected()
+        panel._connected_profile = profile.id
+        panel._epoch = 20
+        panel._discovery_done(profile.id, 20, True, None, ("NETWORK_ERROR", "offline"))
+        assert panel._connected_profile == profile.id
+        assert panel._monitor.isActive()
+        assert panel._monitor.interval() == 10000
+        assert "Retrying" in panel.details.text()
+        panel.disconnect()
+        assert not panel._monitor.isActive()
+    finally:
+        panel.close()
+        assert app is not None

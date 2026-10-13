@@ -9,6 +9,7 @@ import hashlib
 import json
 import re
 import socket
+from collections.abc import Iterator
 from typing import Any
 from urllib.error import HTTPError, URLError
 from collections.abc import Mapping
@@ -100,7 +101,7 @@ def _encode_query(params: Mapping[str, str | int | None] | None) -> str:
         if isinstance(value, bool):
             raise ValueError("invalid query parameter value")
         if isinstance(value, int):
-            if not 0 <= value <= 100_000:
+            if not 0 <= value <= 2_000_000_000:
                 raise ValueError("query integer out of range")
             text = str(value)
         elif isinstance(value, str) and _QUERY_VALUE.fullmatch(value):
@@ -246,6 +247,43 @@ class BackendClient:
         except (URLError, socket.timeout, TimeoutError, ConnectionError, OSError) as exc:
             raise BackendError("NETWORK_ERROR", "Unable to reach backend") from exc
         return total, digest.hexdigest(), advertised
+
+    def stream_lines(self, path: str, params: Mapping[str, str | int | None] | None = None,
+                     max_line: int = 65_536, stop: Any = None) -> Iterator[str]:
+        """Yield decoded lines of a ``text/event-stream`` response until it ends or errors.
+
+        The socket timeout applies to each read, so the backend's 15 s heartbeat keeps a quiet but
+        healthy stream alive. No redirects, no retries; the caller reconnects.
+        """
+        if not _API_PATH.fullmatch(path):
+            raise ValueError("only fixed backend API paths are allowed")
+        headers = {"Accept": "text/event-stream", "User-Agent": "Morphorum-Studio/0.1",
+                   "Cache-Control": "no-cache"}
+        if self._token:
+            headers["Authorization"] = "Bearer " + self._token
+        request = Request(self.base_url + path + _encode_query(params), headers=headers, method="GET")
+        try:
+            with self._opener.open(request, timeout=self.timeout) as response:
+                if not 200 <= response.status < 300:
+                    raise BackendError(_ERROR_CODES.get(response.status, "HTTP_ERROR"),
+                                       f"Backend returned HTTP {response.status}", response.status)
+                if response.headers.get("Content-Type", "").split(";")[0].strip().lower() \
+                        != "text/event-stream":
+                    raise BackendError("INVALID_RESPONSE", "Expected an event stream")
+                while True:
+                    raw = response.readline(max_line + 1)
+                    if not raw or (stop is not None and stop()):
+                        return
+                    if len(raw) > max_line:
+                        raise BackendError("INVALID_RESPONSE", "Event stream line too long")
+                    yield raw.decode("utf-8", errors="replace").rstrip("\r\n")
+        except HTTPError as exc:
+            if 300 <= exc.code < 400:
+                raise BackendError("REDIRECT_REJECTED", "Backend redirected a stream", exc.code) from exc
+            raise BackendError(_ERROR_CODES.get(exc.code, "HTTP_ERROR"),
+                               f"Backend returned HTTP {exc.code}", exc.code) from exc
+        except (URLError, socket.timeout, TimeoutError, ConnectionError, OSError) as exc:
+            raise BackendError("NETWORK_ERROR", "Unable to reach backend") from exc
 
     def _request(self, method: str, path: str,
                  params: Mapping[str, str | int | None] | None = None,

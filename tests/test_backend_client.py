@@ -19,6 +19,9 @@ class FakeResponse:
     def read(self, n):
         return self.data.read(n)
 
+    def readline(self, n=-1):
+        return self.data.readline(n)
+
     def __enter__(self):
         return self
 
@@ -219,7 +222,7 @@ def test_no_query_string_when_there_are_no_parameters():
     {"family": "x" * 65},
     {"limit": True},
     {"limit": -1},
-    {"limit": 100_001},
+    {"limit": 2_000_000_001},
     {"limit": 1.5},
     {"family": ["a"]},
 ])

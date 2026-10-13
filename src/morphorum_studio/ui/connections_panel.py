@@ -28,6 +28,7 @@ class ConnectionsPanel(QWidget):
         self._worker = None
         self._epoch = 0
         self._connected_profile = None
+        self._retry_count = 0
         self._monitor = QTimer(self)
         self._monitor.setInterval(15000)
         self._monitor.timeout.connect(self._monitor_tick)
@@ -288,6 +289,13 @@ class ConnectionsPanel(QWidget):
             elif code == "INCOMPATIBLE_API":
                 self.details.setText("Incompatible backend API. Update backend or Studio.")
                 self.status_changed.emit("BACKEND INCOMPATIBLE")
+            elif monitoring and code in ("NETWORK_ERROR", "CONNECTION_ERROR"):
+                self._connected_profile = profile_id
+                self._retry_count += 1
+                self._monitor.setInterval(min(60000, 5000 * (2 ** min(self._retry_count, 4))))
+                self._monitor.start()
+                self.details.setText("Backend unreachable. Retrying in background; server jobs are untouched.")
+                self.status_changed.emit("BACKEND RECONNECTING")
             else:
                 self.details.setText(f"{code}: {message}. Use Connect / Test to retry.")
                 self.status_changed.emit("BACKEND OFFLINE")
@@ -329,12 +337,15 @@ class ConnectionsPanel(QWidget):
             + ("\nBackend restarted: refresh job state before continuing." if changed_boot else "")
         )
         self._connected_profile = p.id
+        self._retry_count = 0
+        self._monitor.setInterval(15000)
         self._monitor.start()
         self.status_changed.emit("BACKEND CONNECTED")
 
     def disconnect(self):
         self._monitor.stop()
         self._connected_profile = None
+        self._retry_count = 0
         self._epoch += 1  # Ignore results from any in-flight background request.
         self._busy = False
         self.test_button.setEnabled(True)

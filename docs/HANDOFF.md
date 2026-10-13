@@ -122,3 +122,9 @@ User confirmed Studio **connected successfully to the remote Morphorum backend o
 Added passive Qt-timer monitoring to the Connections panel on `feature/studio-s1-connection-foundation`. Successful authenticated discovery starts a 15-second background health+capabilities probe. Short network failures enter **BACKEND RECONNECTING** with bounded retry intervals (10–60s); no GPU job submission or backend process control. Authentication failures stop retries and show **BACKEND UNAUTHORIZED**, incompatible API stops retries, and unexpected installation identity still requires explicit human approval. Changed `boot_id` is surfaced in the connection details, but S3 job/event state reconciliation has not been built. Disconnect stops the monitor and invalidates late worker results. No token is written to project profiles.
 
 Automated tests cover stale responses, auth rejection and passive retry. This is a candidate pending exact-commit dual-platform CI and Windows physical acceptance. Do not create S1 accepted checkpoint or merge Studio `main` until those tests and remaining identity/credential acceptance gates pass.
+
+## S1 reliability physical acceptance (2026-10-12)
+
+**User report: PASS.** On Windows, the user confirmed the S1 monitoring acceptance sequence worked as expected: connected with existing LAN profile, backend stopped -> Studio detected/retried, backend started -> Studio reconnected, backend restart detection, and manual Disconnect stopped monitoring. GitHub Actions for implementation commit `726f4ce0c35792a84d57fba121da1583b1fbde12` passed on Windows Python 3.12 and Ubuntu Python 3.12.
+
+This acceptance covers the passive reconnect increment, not all S1 security gates. Separate physical tests for wrong/revoked token and unexpected different `instance_id` remain pending. Keep Studio `main` untouched until explicit merge approval; keep backend `main` untouched until the desktop app is working and the user authorizes backend PR #32.

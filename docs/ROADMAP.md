@@ -54,7 +54,7 @@ Deliverables:
 
 ## S2. Models, projects and media assets
 
-**S2.1 Model discovery and dashboard (NOT STARTED, next proposed milestone)**
+**S2.1 Model discovery and dashboard (IMPLEMENTED on feature/studio-s2-1-dashboard; awaiting CI + physical Windows test, see [S2_1_DASHBOARD.md](S2_1_DASHBOARD.md))**
 
 Incremental implementation order (stop for user review before GPU operations):
 - [ ] Confirm dev-ui head/CI and live dev-backend API schema/feature flags; agree on branch from current dev-ui. S2 must not be written to Studio main automatically.

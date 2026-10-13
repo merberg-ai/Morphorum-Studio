@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 from morphorum_studio.backend.client import BackendError, normalize_base_url
 from morphorum_studio.backend.credentials import CredentialStore
 from morphorum_studio.backend.profiles import ConnectionProfile, ProfileStore
+from morphorum_studio.backend.session import BackendSession, SessionInfo
 from morphorum_studio.backend.worker import DiscoveryWorker
 from morphorum_studio.ui.preferences import StudioPreferences
 
@@ -30,8 +31,12 @@ class ConnectionsPanel(QWidget):
     profile_selected = Signal(str)
     connection_succeeded = Signal(str)
 
-    def __init__(self, parent=None, profile_store=None, credential_store=None, preferences=None):
+    def __init__(self, parent=None, profile_store=None, credential_store=None, preferences=None,
+                 session=None):
         super().__init__(parent)
+        # Shared, read-only view of this connection for the other pages (see backend/session.py).
+        self.session = session if session is not None else BackendSession(self)
+        self._probe_token = None
         self.store = profile_store or ProfileStore()
         self.vault = credential_store or CredentialStore()
         self.preferences = preferences or StudioPreferences()
@@ -428,6 +433,7 @@ class ConnectionsPanel(QWidget):
             self.details.setText("Connecting in background…")
             self.status_changed.emit("BACKEND CONNECTING")
         epoch = self._epoch
+        self._probe_token = token
         worker = DiscoveryWorker(profile.url, token)
         self._worker = worker
         worker.signals.completed.connect(
@@ -449,6 +455,7 @@ class ConnectionsPanel(QWidget):
         except RuntimeError:
             self._monitor.stop()
             self._connected_profile = None
+            self.session.disconnected()
             self.details.setText("Credential store unavailable. Reconnect manually.")
             self.status_changed.emit("BACKEND OFFLINE")
             return
@@ -464,10 +471,15 @@ class ConnectionsPanel(QWidget):
             self.test_button.setEnabled(True)
             self.selector.setEnabled(True)
         self._worker = None
+        probe_token, self._probe_token = self._probe_token, None  # Held only for this attempt.
         if error:
             self._monitor.stop()
             self._connected_profile = None
             code, message = error
+            if monitoring and code in TRANSIENT_ERRORS:
+                self.session.reconnecting()
+            else:
+                self.session.disconnected()
             if code in ("AUTH_REQUIRED", "FORBIDDEN"):
                 self.details.setText("Authentication rejected. Check or reimport client token.")
                 self.status_changed.emit("BACKEND UNAUTHORIZED")
@@ -507,6 +519,7 @@ class ConnectionsPanel(QWidget):
             if answer != QMessageBox.StandardButton.Yes:
                 self._monitor.stop()
                 self._connected_profile = None
+                self.session.disconnected()
                 self.status_changed.emit("BACKEND IDENTITY MISMATCH")
                 self.details.setText("Identity mismatch rejected. Connection stopped.")
                 return
@@ -535,6 +548,7 @@ class ConnectionsPanel(QWidget):
         )
         newly_connected = self._connected_profile != p.id
         self._connected_profile = p.id
+        self._publish_session(p, result, probe_token)
         self._retry_count = 0
         self._monitor.setInterval(15000)
         self._monitor.start()
@@ -542,7 +556,19 @@ class ConnectionsPanel(QWidget):
         if newly_connected:
             self.connection_succeeded.emit(p.id)
 
+    def _publish_session(self, profile, result, token=None):
+        if token is None:
+            try:
+                token = self.vault.get(profile.id)
+            except RuntimeError:
+                token = None
+        self.session.connected(SessionInfo(
+            profile.id, profile.name, profile.url, result.version, result.mode,
+            result.instance_id, result.boot_id, dict(result.features),
+        ), token)
+
     def disconnect(self):
+        self.session.disconnected()
         self._monitor.stop()
         self._connected_profile = None
         self._retry_count = 0

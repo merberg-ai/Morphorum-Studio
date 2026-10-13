@@ -2,6 +2,7 @@
 from email.message import Message
 from io import BytesIO
 import json
+from urllib.error import HTTPError
 
 import pytest
 
@@ -183,3 +184,85 @@ def test_get_json_rejects_unsafe_paths(path):
 def test_get_json_accepts_plain_api_paths(path):
     opener = FakeOpener([FakeResponse({"ok": True})])
     assert BackendClient("http://localhost", opener=opener).get_json(path) == {"ok": True}
+
+
+# ---- S2.1: query parameters and the typed read API ------------------------------------------
+
+def _json_client(*payloads):
+    opener = FakeOpener([FakeResponse(p) for p in payloads])
+    return BackendClient("http://localhost:7866", "test-secret", opener=opener), opener
+
+
+def test_query_parameters_are_encoded_and_none_is_omitted():
+    client, opener = _json_client({"models": []})
+    client.get_json("/api/models", {"family": "sdxl", "kind": None, "limit": 25})
+    request = opener.requests[0][0]
+    assert request.full_url == "http://localhost:7866/api/models?family=sdxl&limit=25"
+    assert request.get_header("Authorization") == "Bearer test-secret"
+    assert "test-secret" not in request.full_url
+
+
+def test_no_query_string_when_there_are_no_parameters():
+    client, opener = _json_client({}, {})
+    client.get_json("/api/models")
+    client.get_json("/api/models", {"family": None})
+    assert [r.full_url for r, _ in opener.requests] == ["http://localhost:7866/api/models"] * 2
+
+
+@pytest.mark.parametrize("params", [
+    {"Family": "sdxl"},  # key must be lowercase
+    {"a b": "x"},
+    {"family": "x&admin=1"},
+    {"family": "a/b"},
+    {"family": "../etc"},
+    {"family": ""},
+    {"family": "x" * 65},
+    {"limit": True},
+    {"limit": -1},
+    {"limit": 100_001},
+    {"limit": 1.5},
+    {"family": ["a"]},
+])
+def test_unsafe_query_parameters_are_rejected_before_any_request(params):
+    client, opener = _json_client({})
+    with pytest.raises(ValueError):
+        client.get_json("/api/models", params)
+    assert opener.requests == []
+
+
+def test_read_api_calls_the_documented_endpoints():
+    from fakes import CAPABILITIES, FAMILIES, GPU_MEMORY, MODELS, SUMMARY, TELEMETRY
+
+    from morphorum_studio.backend.api import ReadApi
+
+    client, opener = _json_client(
+        TELEMETRY, GPU_MEMORY, FAMILIES, SUMMARY, MODELS, MODELS, CAPABILITIES)
+    api = ReadApi(client)
+    assert api.telemetry().gpus[0].name.endswith("4080")
+    assert api.gpu_memory().cuda_available
+    assert [f.id for f in api.model_families()] == ["sdxl", "zimage"]
+    assert api.model_summary().total == 3
+    assert len(api.models()) == 3
+    assert len(api.models(family="sdxl", kind="checkpoints")) == 3
+    assert api.generation_defaults()["sdxl"].steps_default == 25
+    assert [r.full_url.replace("http://localhost:7866", "") for r, _ in opener.requests] == [
+        "/api/system/telemetry", "/api/system/gpu-memory", "/api/models/families",
+        "/api/models/summary", "/api/models?limit=1000",
+        "/api/models?family=sdxl&kind=checkpoints&limit=1000", "/api/generation/capabilities",
+    ]
+
+
+def test_read_api_surfaces_backend_errors_and_rejects_bad_filters():
+    from morphorum_studio.backend.api import ReadApi
+
+    for status, code in ((401, "AUTH_REQUIRED"), (404, "NOT_FOUND"), (429, "RATE_LIMITED")):
+        err = HTTPError("http://x/api/models", status, "err", Message(), None)
+        client = BackendClient("http://localhost:7866", "t", opener=FakeOpener([err]))
+        with pytest.raises(BackendError) as caught:
+            ReadApi(client).models()
+        assert caught.value.code == code
+    with pytest.raises(ValueError):
+        ReadApi(_json_client({})[0]).models(family="sdxl&x=1")
+    client, _ = _json_client([1, 2])  # JSON array, not an object
+    with pytest.raises(BackendError):
+        ReadApi(client).telemetry()

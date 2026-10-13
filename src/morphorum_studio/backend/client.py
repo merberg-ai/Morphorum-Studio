@@ -10,7 +10,8 @@ import re
 import socket
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit, urlunsplit
+from collections.abc import Mapping
+from urllib.parse import urlencode, urlsplit, urlunsplit
 from urllib.request import (
     HTTPRedirectHandler, HTTPSHandler, HTTPHandler, ProxyHandler, Request, build_opener,
 )
@@ -77,6 +78,38 @@ def normalize_base_url(value: str) -> str:
 _API_PATH = re.compile(r"/api(?:/[A-Za-z0-9][A-Za-z0-9_.\-]*)+")
 
 
+_QUERY_KEY = re.compile(r"[a-z][a-z_]{0,23}")
+_QUERY_VALUE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.\- ]{0,63}")
+
+
+def _encode_query(params: Mapping[str, str | int | None] | None) -> str:
+    """Build a safe query string from simple, validated parameters.
+
+    Keys are short lowercase names; values are small integers or short plain strings.
+    ``None`` values are omitted. The bearer token is never part of a URL.
+    """
+    if not params:
+        return ""
+    pairs = []
+    for key, value in params.items():
+        if value is None:
+            continue
+        if not isinstance(key, str) or not _QUERY_KEY.fullmatch(key):
+            raise ValueError("invalid query parameter name")
+        if isinstance(value, bool):
+            raise ValueError("invalid query parameter value")
+        if isinstance(value, int):
+            if not 0 <= value <= 100_000:
+                raise ValueError("query integer out of range")
+            text = str(value)
+        elif isinstance(value, str) and _QUERY_VALUE.fullmatch(value):
+            text = value
+        else:
+            raise ValueError("invalid query parameter value")
+        pairs.append((key, text))
+    return "?" + urlencode(pairs) if pairs else ""
+
+
 class BackendClient:
     """GET-only native discovery client. Does not follow redirects or retry.
 
@@ -99,13 +132,15 @@ class BackendClient:
             _NoRedirect, HTTPHandler, HTTPSHandler,
         )
 
-    def get_json(self, path: str) -> dict[str, Any]:
+    def get_json(self, path: str,
+                 params: Mapping[str, str | int | None] | None = None) -> dict[str, Any]:
         if not _API_PATH.fullmatch(path):
             raise ValueError("only fixed backend API paths are allowed")
+        query = _encode_query(params)
         headers = {"Accept": "application/json", "User-Agent": "Morphorum-Studio/0.1"}
         if self._token:
             headers["Authorization"] = "Bearer " + self._token
-        request = Request(self.base_url + path, headers=headers, method="GET")
+        request = Request(self.base_url + path + query, headers=headers, method="GET")
         try:
             with self._opener.open(request, timeout=self.timeout) as response:
                 status = response.status

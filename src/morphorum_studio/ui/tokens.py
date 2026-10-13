@@ -454,6 +454,43 @@ QToolButton#linkButton {
 QToolButton#linkButton:hover {
     color: #9ee8ff;
 }
+QLabel#metricValue {
+    font-family: "$font_mono", "Consolas", monospace;
+    font-size: 12px;
+    color: $text;
+}
+QLabel#metricValue[stale="true"] {
+    color: $faint;
+}
+QLabel#notice {
+    color: #ffd592;
+    background: rgba(246, 185, 76, 23);
+    border: 1px solid rgba(246, 185, 76, 71);
+    border-radius: 10px;
+    padding: 9px 14px;
+}
+QTreeWidget#modelTree {
+    background: $base;
+    border: 1px solid $line;
+    border-radius: 8px;
+    outline: none;
+}
+QTreeWidget#modelTree::item {
+    height: 28px;
+    color: $text;
+}
+QTreeWidget#modelTree::item:selected {
+    background: $hover;
+}
+QHeaderView::section {
+    background: $panel;
+    color: $faint;
+    border: none;
+    border-bottom: 1px solid $line;
+    padding: 6px 8px;
+    font-size: 11px;
+    font-weight: 500;
+}
 QCheckBox {
     spacing: 9px;
     color: $text;

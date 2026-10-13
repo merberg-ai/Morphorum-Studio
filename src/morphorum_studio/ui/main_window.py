@@ -17,8 +17,11 @@ from PySide6.QtWidgets import (
 )
 
 from morphorum_studio import __version__
+from morphorum_studio.backend.session import BackendSession
 from morphorum_studio.ui import frameless
 from morphorum_studio.ui.connections_panel import ConnectionsPanel
+from morphorum_studio.ui.dashboard_service import DashboardService
+from morphorum_studio.ui.home_page import HomePage
 from morphorum_studio.ui.preferences import StudioPreferences
 from morphorum_studio.ui.shell import NavRail, TitleBar
 from morphorum_studio.ui.startup_settings import StartupSettingsPanel
@@ -153,11 +156,21 @@ class StudioMainWindow(QMainWindow):
         )
         body_layout.addWidget(self.navigation)
 
+        self.session = BackendSession(self)
+        self.dashboard = DashboardService(self.session, self)
         self.pages = QStackedWidget()
         self.pages.setObjectName("pages")
         for page_name, title, description in PAGES:
-            if page_name == "Connections":
-                self.connections_panel = ConnectionsPanel(preferences=self.preferences)
+            if page_name == "Home":
+                self.home_page = HomePage(self.session, self.dashboard)
+                self.home_page.open_connections.connect(
+                    lambda: self.navigation.setCurrentRow(names.index("Connections"))
+                )
+                self.pages.addWidget(self.home_page)
+            elif page_name == "Connections":
+                self.connections_panel = ConnectionsPanel(
+                    preferences=self.preferences, session=self.session
+                )
                 self.connections_panel.status_changed.connect(self._on_connection_status)
                 self.pages.addWidget(self.connections_panel)
             elif page_name == "Settings":
@@ -169,6 +182,9 @@ class StudioMainWindow(QMainWindow):
 
         self.navigation.currentRowChanged.connect(self.pages.setCurrentIndex)
         self.navigation.currentRowChanged.connect(self._remember_workspace)
+        self.navigation.currentRowChanged.connect(
+            lambda row: self.dashboard.set_active(row == names.index("Home"))
+        )
         self.connection_status.clicked.connect(
             lambda *_: self.navigation.setCurrentRow(names.index("Connections"))
         )
@@ -258,6 +274,7 @@ class StudioMainWindow(QMainWindow):
         if self.preferences.enabled("restore_geometry", True):
             self.preferences.save_window(self)
         self.preferences.sync()
+        self.dashboard.set_active(False)
         self.connections_panel.disconnect()
         super().closeEvent(event)
 

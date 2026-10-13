@@ -498,3 +498,49 @@ def test_token_help_is_collapsed_until_asked_for_and_command_copies(tmp_path):
         panel.close()
         app.setStyleSheet("")
         assert app is not None
+
+
+def test_panel_publishes_connection_state_to_the_shared_session(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    panel, profile = _saved_panel(tmp_path)
+    try:
+        panel.vault.set(profile.id, "tok")
+        session = panel.session
+        assert session.state == "offline"
+        panel._discovery_done(profile.id, panel._epoch, False, _result(), None)
+        assert session.state == "connected" and session.info.profile_name == "Omen"
+        assert session.info.base_url == "http://127.0.0.1:7866"
+        assert session.info.instance_id == "a" * 32 and session.info.features == {"render": True}
+        assert session._token == "tok" and panel._probe_token is None
+        epoch = session.epoch
+
+        panel._discovery_done(profile.id, panel._epoch, True, None, ("NETWORK_ERROR", "down"))
+        assert session.state == "reconnecting" and session.epoch == epoch  # outage keeps identity
+        panel._discovery_done(profile.id, panel._epoch, True, _result(), None)
+        assert session.state == "connected" and session.epoch == epoch
+        panel._discovery_done(profile.id, panel._epoch, True, _result(boot="c"), None)
+        assert session.epoch == epoch + 1  # restart: dependants must reload
+
+        panel._discovery_done(profile.id, panel._epoch, True, None, ("AUTH_REQUIRED", "401"))
+        assert session.state == "offline" and session.client() is None
+        panel._discovery_done(profile.id, panel._epoch, True, _result(boot="c"), None)
+        assert session.state == "connected"
+        panel.disconnect()
+        assert session.state == "offline" and session._token is None
+    finally:
+        panel.close()
+        assert app is not None
+
+
+def test_rejected_identity_change_leaves_no_session(tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    panel, profile = _saved_panel(tmp_path)
+    try:
+        panel._discovery_done(profile.id, panel._epoch, False, _result(), None)
+        assert panel.session.state == "connected"
+        monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: QMessageBox.StandardButton.No)
+        panel._discovery_done(profile.id, panel._epoch, True, _result(instance="c"), None)
+        assert panel.session.state == "offline"
+    finally:
+        panel.close()
+        assert app is not None

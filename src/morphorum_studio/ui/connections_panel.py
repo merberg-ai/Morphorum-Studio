@@ -18,6 +18,8 @@ from morphorum_studio.backend.worker import DiscoveryWorker
 
 class ConnectionsPanel(QWidget):
     status_changed = Signal(str)
+    profile_selected = Signal(str)
+    connection_succeeded = Signal(str)
 
     def __init__(self, parent=None, profile_store=None, credential_store=None):
         super().__init__(parent)
@@ -122,6 +124,7 @@ class ConnectionsPanel(QWidget):
         if self._connected_profile is not None:
             self.disconnect()
         p = self.selected()
+        self.profile_selected.emit(p.id if p else "")
         self.name.setText(p.name if p else "")
         self.url.setText(p.url if p else "")
         self.token.clear()
@@ -134,6 +137,13 @@ class ConnectionsPanel(QWidget):
             "Token stored in OS credential manager" if has_token
             else "No saved token for this profile"
         )
+
+    def select_by_id(self, profile_id: str):
+        index = self.selector.findData(profile_id)
+        if index >= 0:
+            self.selector.setCurrentIndex(index)
+            return True
+        return False
 
     def new_profile(self):
         if self._busy:
@@ -344,6 +354,7 @@ class ConnectionsPanel(QWidget):
         self._monitor.setInterval(15000)
         self._monitor.start()
         self.status_changed.emit("BACKEND CONNECTED")
+        self.connection_succeeded.emit(p.id)
 
     def disconnect(self):
         self._monitor.stop()

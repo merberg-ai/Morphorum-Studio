@@ -116,3 +116,9 @@ S1.2 implementation on `feature/studio-s1-connection-foundation` now includes `b
 ## S1.2 LAN milestone user verification (2026-10-12)
 
 User confirmed Studio **connected successfully to the remote Morphorum backend over LAN** after token-file-import UX and syntax fixes. Initial authenticated backend discovery is physically PASS by user report. Both Windows and Ubuntu CI passed on correction commit `a3c01452bf630da76b6380d144c05bf943be8569`. This is not blanket S1 physical acceptance: revoked/wrong-token tests, backend restart and boot-ID refresh, identity mismatch, offline responsiveness, and reconnect behavior remain separate gates. S1.2 stays unmerged.
+
+## S1 reliability candidate after LAN acceptance (2026-10-12)
+
+Added passive Qt-timer monitoring to the Connections panel on `feature/studio-s1-connection-foundation`. Successful authenticated discovery starts a 15-second background health+capabilities probe. Short network failures enter **BACKEND RECONNECTING** with bounded retry intervals (10–60s); no GPU job submission or backend process control. Authentication failures stop retries and show **BACKEND UNAUTHORIZED**, incompatible API stops retries, and unexpected installation identity still requires explicit human approval. Changed `boot_id` is surfaced in the connection details, but S3 job/event state reconciliation has not been built. Disconnect stops the monitor and invalidates late worker results. No token is written to project profiles.
+
+Automated tests cover stale responses, auth rejection and passive retry. This is a candidate pending exact-commit dual-platform CI and Windows physical acceptance. Do not create S1 accepted checkpoint or merge Studio `main` until those tests and remaining identity/credential acceptance gates pass.

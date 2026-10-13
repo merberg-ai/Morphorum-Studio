@@ -114,7 +114,14 @@ class ConnectionsPanel(QWidget):
         self.name.setText(p.name if p else "")
         self.url.setText(p.url if p else "")
         self.token.clear()
-        self.trust_http.setChecked(False)\n        self.credential_status.setText("Token stored in OS credential manager" if p and self.vault.get(p.id) else "No saved token for this profile")
+        self.trust_http.setChecked(False)\n        try:
+            has_token = bool(p and self.vault.get(p.id))
+        except RuntimeError:
+            has_token = False
+        self.credential_status.setText(
+            "Token stored in OS credential manager" if has_token
+            else "No saved token for this profile"
+        )
 
     def new_profile(self):
         if self._busy:

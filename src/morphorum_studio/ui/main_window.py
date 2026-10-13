@@ -30,6 +30,7 @@ from morphorum_studio.ui.image_lab_page import ImageLabPage
 from morphorum_studio.ui.image_service import ImageLabService
 from morphorum_studio.ui.preferences import StudioPreferences
 from morphorum_studio.ui.projects_page import ProjectsPage
+from morphorum_studio.ui.render_service import RenderService
 from morphorum_studio.ui.projects_service import ProjectsService
 from morphorum_studio.ui.shell import NavRail, TitleBar
 from morphorum_studio.ui.startup_settings import StartupSettingsPanel
@@ -171,7 +172,9 @@ class StudioMainWindow(QMainWindow):
         if journal_dir is None:
             journal_dir = Path(QStandardPaths.writableLocation(
                 QStandardPaths.StandardLocation.AppLocalDataLocation)) / "submissions"
-        self.image_service = ImageLabService(self.session, SubmissionJournal(journal_dir), self)
+        self.journal = SubmissionJournal(journal_dir)
+        self.image_service = ImageLabService(self.session, self.journal, self)
+        self.render_service = RenderService(self.session, self.journal, self)
         self.pages = QStackedWidget()
         self.pages.setObjectName("pages")
         for page_name, title, description in PAGES:
@@ -183,7 +186,7 @@ class StudioMainWindow(QMainWindow):
                 self.pages.addWidget(self.home_page)
             elif page_name == "Projects":
                 self.projects_page = ProjectsPage(
-                    self.session, self.projects_service, self.preferences
+                    self.session, self.projects_service, self.preferences, self.render_service
                 )
                 self.projects_page.open_connections.connect(
                     lambda: self.navigation.setCurrentRow(names.index("Connections"))

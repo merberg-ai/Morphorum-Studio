@@ -96,7 +96,7 @@ Incremental implementation order (stop for user review before GPU operations):
 - Live job progress: queue, model load, per-step, ETA when available, results/preview/gallery and cancel where supported.
 - Native result image viewer, zoom and safe save; backend does the generation.
 
-**S3.2 Animation and job recovery**
+**S3.2 Animation and job recovery (IMPLEMENTED on feature/studio-s3-2-animation; SSE deliberately not used, see [S3_2_ANIMATION.md](S3_2_ANIMATION.md); awaiting CI + physical Windows test)**
 - Submit **full saved project** in `POST /api/animation/renders`, never just project ID.
 - Typed SSE `/api/client/jobs/{kind}/{job_id}/events` with authoritative GET polling fallback.
 - Correct boot ID resets, console gaps, queued/running/failed/cancelled/interrupted/resumable distinctions, and explicit resume confirmation.

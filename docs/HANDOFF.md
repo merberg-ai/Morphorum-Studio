@@ -185,3 +185,6 @@ See docs/S2_3_ASSETS.md. Stacked on feature/studio-s2-2-projects. Source image +
 
 ## S3.1 Image Lab (branch feature/studio-s3-1-image-lab)
 See docs/S3_1_IMAGE_LAB.md. Stacked on feature/studio-s2-4-polish. Durable journalled submissions with Idempotency-Key, REST job polling, viewer. First GPU-starting feature: test with a small model. Awaiting CI and a physical Windows test. Nothing merged.
+
+## S3.2 animation renders (branch feature/studio-s3-2-animation)
+See docs/S3_2_ANIMATION.md. Stacked on feature/studio-s3-1-image-lab. Render card on the Projects page; journalled start, REST polling, resume, frame browser, GIF preview. Awaiting CI and a physical Windows test. Nothing merged.

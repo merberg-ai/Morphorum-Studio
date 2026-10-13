@@ -42,6 +42,7 @@ from morphorum_studio.backend.projects import (
 from morphorum_studio.backend.session import BackendSession
 from morphorum_studio.ui.assets_card import AssetsCard
 from morphorum_studio.ui.preferences import StudioPreferences
+from morphorum_studio.ui.render_card import RenderCard
 from morphorum_studio.ui.projects_service import ProjectsService
 
 NA = "—"
@@ -91,8 +92,9 @@ class ProjectsPage(QFrame):
     open_connections = Signal()
 
     def __init__(self, session: BackendSession, service: ProjectsService,
-                 preferences: StudioPreferences) -> None:
+                 preferences: StudioPreferences, render_service=None) -> None:
         super().__init__()
+        self._render_service = render_service
         self.setObjectName("pageSurface")
         self._session = session
         self._service = service
@@ -255,6 +257,11 @@ class ProjectsPage(QFrame):
         self.assets_card.project_changed.connect(self._reload_after_asset_change)
         dbox.addWidget(self.assets_card)
 
+        self.render_card = None
+        if self._render_service is not None:
+            self.render_card = RenderCard(self._render_service)
+            dbox.addWidget(self.render_card)
+
         renders = QFrame()
         renders.setObjectName("card")
         rbox = QVBoxLayout(renders)
@@ -334,7 +341,7 @@ class ProjectsPage(QFrame):
         self.project_list.clear()
         self.project_list.blockSignals(False)
         self.recent_combo.clear()
-        self.assets_card.set_project(None)
+        self._cards_project(None)
         self.detail_stack.setCurrentIndex(0)
         self.empty_detail.setText("")
 
@@ -349,7 +356,7 @@ class ProjectsPage(QFrame):
         if self._selected and self._selected not in ids and not self.has_unsaved_changes():
             self._selected = None
             self._loaded = None
-            self.assets_card.set_project(None)
+            self._cards_project(None)
             self.detail_stack.setCurrentIndex(0)
         if self._restore_pending:
             self._restore_pending = False
@@ -419,7 +426,7 @@ class ProjectsPage(QFrame):
         self._selected = project_id
         self._loaded = None
         self._etag = None
-        self.assets_card.set_project(None)
+        self._cards_project(None)
         self.detail_stack.setCurrentIndex(0)
         self.empty_detail.setText("Opening project…")
         self._apply_filter()
@@ -468,7 +475,7 @@ class ProjectsPage(QFrame):
         info["Created"].setText(format_when(detail.created_at))
         info["Updated"].setText(format_when(detail.updated_at))
         self.detail_stack.setCurrentIndex(1)
-        self.assets_card.set_project(detail.id)
+        self._cards_project(detail.id)
         self._edited()
 
     def _show_renders(self, renders: tuple[RenderSummary, ...] | None) -> None:
@@ -497,7 +504,7 @@ class ProjectsPage(QFrame):
 
     def _edited(self) -> None:
         self.dirty_label.setText("Unsaved changes" if self.has_unsaved_changes() else "")
-        self.assets_card.set_locked(self.has_unsaved_changes())
+        self._cards_locked(self.has_unsaved_changes())
         self._update_buttons()
 
     def _update_buttons(self) -> None:
@@ -514,6 +521,16 @@ class ProjectsPage(QFrame):
         self.trash_button.setEnabled(available and has_project and not busy)
         for widget in (self.name_edit, self.notes_edit):
             widget.setEnabled(available and not busy)
+
+    def _cards_project(self, project_id: str | None) -> None:
+        self.assets_card.set_project(project_id)
+        if self.render_card is not None:
+            self.render_card.set_project(project_id)
+
+    def _cards_locked(self, locked: bool) -> None:
+        self.assets_card.set_locked(locked)
+        if self.render_card is not None:
+            self.render_card.set_locked(locked)
 
     def _reload_after_asset_change(self) -> None:
         # The source image changed the project's revision; fetch the new ETag (form is clean).
@@ -578,7 +595,7 @@ class ProjectsPage(QFrame):
         if project_id == self._selected:
             self._selected = None
             self._loaded = None
-            self.assets_card.set_project(None)
+            self._cards_project(None)
             self.detail_stack.setCurrentIndex(0)
             self.empty_detail.setText("Project moved to the backend's Trash.")
         self._service.refresh()
@@ -592,7 +609,7 @@ class ProjectsPage(QFrame):
             self.empty_detail.setText(f"Could not open this project ({code}).")
             self.detail_stack.setCurrentIndex(0)
             self._loaded = None
-            self.assets_card.set_project(None)
+            self._cards_project(None)
         elif operation == "assets":
             self.dirty_label.setText(f"Could not load project media ({code}).")
         elif operation == "save" and code == "PRECONDITION_FAILED":

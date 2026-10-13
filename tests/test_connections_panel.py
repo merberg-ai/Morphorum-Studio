@@ -143,3 +143,65 @@ def test_network_outage_retries_without_reauthentication_prompt(tmp_path):
     finally:
         panel.close()
         assert app is not None
+
+
+def test_wrong_and_revoked_tokens_fail_closed(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    panel = ConnectionsPanel(
+        profile_store=ProfileStore(tmp_path / "profiles.json"),
+        credential_store=FakeVault(),
+    )
+    messages = []
+    panel.status_changed.connect(messages.append)
+    try:
+        panel.name.setText("Test")
+        panel.url.setText("http://127.0.0.1:7866")
+        panel.save_profile()
+        profile = panel.selected()
+        for reason in ("AUTH_REQUIRED", "FORBIDDEN"):
+            panel._connected_profile = profile.id
+            panel._monitor.start()
+            panel._epoch += 1
+            panel._discovery_done(profile.id, panel._epoch, True, None, (reason, "Unauthorized"))
+            assert messages[-1] == "BACKEND UNAUTHORIZED"
+            assert not panel._monitor.isActive()
+            assert panel._connected_profile is None
+            assert not profile.instance_id
+    finally:
+        panel.close()
+        assert app is not None
+
+
+def test_identity_mismatch_refusal_preserves_pinned_host(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from PySide6.QtWidgets import QMessageBox
+    app = QApplication.instance() or QApplication([])
+    panel = ConnectionsPanel(
+        profile_store=ProfileStore(tmp_path / "profiles.json"),
+        credential_store=FakeVault(),
+    )
+    statuses = []
+    panel.status_changed.connect(statuses.append)
+    try:
+        panel.name.setText("Test")
+        panel.url.setText("http://127.0.0.1:7866")
+        panel.save_profile()
+        profile = panel.selected()
+        profile.instance_id = "a" * 32
+        profile.boot_id = "b" * 32
+        panel.store.save(panel.profiles)
+        monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: QMessageBox.StandardButton.No)
+        result = SimpleNamespace(
+            instance_id="c" * 32, boot_id="d" * 32, version="0.1",
+            mode="backend-only", features={"render": True},
+        )
+        panel._epoch += 1
+        panel._discovery_done(profile.id, panel._epoch, False, result, None)
+        assert statuses[-1] == "BACKEND IDENTITY MISMATCH"
+        assert profile.instance_id == "a" * 32
+        assert profile.boot_id == "b" * 32
+        assert panel.store.load()[0].instance_id == "a" * 32
+        assert not panel._monitor.isActive()
+    finally:
+        panel.close()
+        assert app is not None

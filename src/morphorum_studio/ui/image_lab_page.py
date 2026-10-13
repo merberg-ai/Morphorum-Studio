@@ -448,14 +448,15 @@ class ImageLabPage(QFrame):
 
     def _sync_preset(self) -> None:
         size = (self.width_spin.value(), self.height_spin.value())
-        index = self.size_combo.findData(size)
+        index = next((i for i in range(self.size_combo.count())
+                      if (d := self.size_combo.itemData(i)) and tuple(d) == size), -1)
         self.size_combo.blockSignals(True)
         self.size_combo.setCurrentIndex(index if index >= 0 else self.size_combo.count() - 1)
         self.size_combo.blockSignals(False)
 
     def _preset_changed(self) -> None:
         size = self.size_combo.currentData()
-        if size:
+        if size:  # Qt may hand a tuple back as a list
             self.width_spin.setValue(size[0])
             self.height_spin.setValue(size[1])
 

@@ -1,134 +1,172 @@
-# Morphorum Studio: NEW-CHAT HANDOFF
+# Morphorum Studio: current development handoff
 
-**Last authored:** 2026-10-12.
-**Read this file first when resuming development in a new chat.**
-**Owner-created repository:** https://github.com/merberg-ai/Morphorum-Studio
-**Backend repository:** https://github.com/merberg-ai/Morphorum
+**Updated: 2026-10-13. Start here in a new chat.**
+- Studio repository: https://github.com/merberg-ai/Morphorum-Studio
+- GPU backend repository: https://github.com/merberg-ai/Morphorum
+- Working Studio branch: **dev-ui**, latest inspected implementation SHA **f91b3e6cf05329c1816e0c68ff7358bd11c63d07**. Documentation-only commits made after that SHA may advance dev-ui; **inspect GitHub before changing code**.
+- Studio main remains at S0 SHA **fb5024e7592a6d271a8eeb214fc2470387d2e363** and MUST NOT be merged without the user's approval.
+- Backend dev-backend remains at **2046d36ff6e084d801a14e2024d14665c207d884**. Its draft PR **#32** is open and unmerged against backend main. Do NOT merge it before the Studio frontend is working and the user explicitly approves.
+- Current phase: **S1 connection implementation + Pre-S2 native UI polish completed for now. S2.1 not started.** The user requested a detailed handoff and is pausing work.
 
-## The user's exact decision
+## If you are a new ChatGPT chat
 
-The user created a **separate** repository for the real native Morphorum desktop Studio application. The user explicitly instructed: **do NOT merge the Morphorum backend into `main` until the frontend app is working**. Keep the backend's [draft PR #32](https://github.com/merberg-ai/Morphorum/pull/32) **unmerged** while Studio development proceeds. An explicit later user approval is required. Do not create another UI repo.
+Read this file, docs/ROADMAP.md, docs/PRE_S2_UI_POLISH.md, docs/ARCHITECTURE.md, and the relevant backend contract documents. **Fetch current dev-ui source, branch heads and GitHub Actions instead of relying only on prose.** Stay on dev-ui unless the user directs otherwise; if beginning a major new phase, discuss whether to create a separate S2 feature branch from accepted dev-ui before editing. Never assume Studio main contains these features. Do not write files in the Morphorum backend repository unless separately approved.
 
-The purpose is a **true native desktop frontend**, not an embedded copy of the existing browser UI. It must control an existing GPU backend over a documented network API and use no local GPU/model installation.
+The logical next phase is **S2.1: backend telemetry and model discovery with a useful Home/dashboard view**, followed by S2.2 revision-safe project browsing and S2.3 asset handling. Prior to implementing any screen, verify live backend endpoint response schema and feature flags and expose no fake data or dead controls. The user may instead want additional interface polish: follow their current instruction.
 
-## Repo state at S0 initialization
+## Project goal and nonnegotiable architecture
 
-- `Morphorum-Studio` was initially created by the user as a public repository with **The Unlicense** and the agreed GitHub description.
-- The S0 scaffold was initialized on **Studio `main`**, not on the backend repo. Implemented files:
-  - `pyproject.toml`: installable Python 3.12+ PySide6 app, version `0.1.0a1`.
-  - `src/morphorum_studio/app.py`, `__main__.py`: Qt launcher and version CLI.
-  - `src/morphorum_studio/ui/main_window.py`: dark desktop shell, nine real navigable pages, offline status.
-  - `src/morphorum_studio/ui/theme.py`: dark graphite theme.
-  - `tests/test_shell.py`: version, navigation, initial offline-state assertions.
-  - `.github/workflows/ci.yml`: Linux/Windows Python 3.12 install + offscreen UI test.
-  - `README.md`, docs, gitignore.
-- **S0 is scaffold-only**. Backend connection, auth, projects, generation and render-monitoring are **NOT yet implemented in Studio**. UI placeholder pages say so.
-- **S0 CI and physical Windows launch are separate gates.** Don't claim S0 physically verified until the user launches it on their machine and confirms.
+Morphorum Studio is an independent **native PySide6 Windows-first desktop frontend** (Linux compatible) controlling an existing Morphorum GPU backend over authenticated REST and, in later milestones, SSE. This is NOT the browser UI in an embedded WebView and NOT a local inference installation. Studio must never install CUDA, PyTorch, model weights or require a shared GPU-host filesystem. All generation, model indexing, media export and GPU work happen in the separate backend. A Studio exit, disconnect or network failure must never stop or restart an attached backend, nor automatically resubmit a GPU job.
 
-### Current branch policy
+Backend reference docs, from dev-backend:
+- https://github.com/merberg-ai/Morphorum/blob/dev-backend/docs/STUDIO_CLIENT_HANDOFF.md
+- https://github.com/merberg-ai/Morphorum/blob/dev-backend/docs/DB2_CLIENT_CONTRACT.md
+- https://github.com/merberg-ai/Morphorum/blob/dev-backend/docs/DB2_CONNECTION_MANAGER.md
+- https://github.com/merberg-ai/Morphorum/blob/dev-backend/docs/DB2_PROJECT_ASSETS.md
+- https://github.com/merberg-ai/Morphorum/blob/dev-backend/docs/DB2_LIVE_RECOVERY.md
+- https://github.com/merberg-ai/Morphorum/blob/dev-backend/docs/DB2_FINAL_ACCEPTANCE.md
 
-Start with Studio `main` for the initial scaffold. Develop each substantial milestone on a dedicated `feature/studio-s1-...` branch (or subsequent S2 etc.), run CI, stop for Windows physical acceptance, then merge to Studio `main` **only with explicit user approval**. Preserve an immutable verified checkpoint when each phase passes physical tests.
+Backend API contract is **v1**. GET /api/health and GET /api/client/capabilities are currently implemented for authenticated discovery. Always inspect advertised backend features rather than inferring support from a UI label. Backend docs have some stale historical headings because Studio was created afterward; actual dev-backend source/response wins.
 
-Avoid rewriting previous accepted checkpoints or automatically merging unrelated backend changes.
+## Exact git state / recovery points
 
-## Backend: actual accepted baseline
+**Studio**
+- dev-ui: working branch, inspected implementation commit **f91b3e6** (corrected logo JPEG and Qt decoder warning regression); exact Windows + Ubuntu CI GREEN.
+- main: **fb5024e**, S0 scaffold only. Intentional: no merge.
+- feature/studio-s1-connection-foundation: **ed5ede9**, S1 security closeout and regression tests; a historical development base. dev-ui already includes this work.
+- checkpoint/studio-s0-windows-verified-20261012: **fb5024e**; physical S0 PASS.
+- checkpoint/studio-s1-reconnect-windows-verified-20261012: **726f4ce**; physically confirmed connection/reconnect PASS, not blanket certification of later work.
+- checkpoint/studio-p3-splash-windows-verified-20261012: **f16f65e**; earlier manual-logo splash accepted, not final bundled image.
+- checkpoint/studio-pre-s2-polish-ci-verified-20261012: **aa7e798**; pre-S2 packaging and fresh-wheel CI passed. **This checkpoint predates correction of a malformed JPEG; do not mistake it for the latest best build.**
+- A checkpoint for **f91b3e6** has **not** been created; user has not expressly reported a separate warning-free Windows retest after the JPEG re-encode. The user said the project is good for now and requested documentation. Do not invent additional physical acceptance or silently replace old checkpoint refs.
 
-Backend `merberg-ai/Morphorum` `dev-backend` HEAD after ordered merge of #27–#31:
+**Backend**
+- dev-backend: **2046d36ff6e084d801a14e2024d14665c207d884**, completed DB2 PR integration #27–#31.
+- Draft https://github.com/merberg-ai/Morphorum/pull/32 targets backend main; as checked 2026-10-13 it was open/draft/unmerged.
+- Backend integrated CI had 536 passed, 1 skipped and user physically verified backend render/recovery/media flows in earlier sessions. Backend main is intentionally held until Studio is working and user approves.
 
-```text
-2046d36ff6e084d801a14e2024d14665c207d884
-```
+## What is actually implemented in Studio today
 
-- All five DB2 PRs were merged in order into **`dev-backend`**, preserving their milestone checkpoints.
-- Combined branch post-merge CI: **536 passed, 1 skipped** backend tests; backend self-test, browser syntax, and installer checks green. Draft PR #32 against `main` remained unmerged.
-- Actual Windows Omen backend tests verified remote SDXL still-image and 120-frame animation, live disconnect/re-attachment to same render ID, SHA-256 project assets, conditional saves, backend restart recovery for **completed** render, safe idempotent replay, and FFmpeg MP4/WebM exports with WAV audio. Existing browser mode also passed physical user verification.
-- Backend runtime version `0.1.0a1`, API contract **1**; Studio must inspect `GET /api/client/capabilities` at runtime rather than assuming all features always work.
+### S0 native application scaffold
+- src/morphorum_studio/app.py, __main__.py: Python CLI/Qt bootstrap, version 0.1.0a1, splash startup.
+- ui/main_window.py: dark desktop shell with **nine workspaces** (Home, Connections, Projects, Image Lab, Editor, Motion Lab, Render Queue, Console, Settings), status header, navigation and footer.
+- Only **Connections** and **Settings** are fully interactive milestone panels. Home and most other workspaces are **honest placeholders**: no models, project browser, render submission, telemetry, timeline editor or preview player yet.
+- ui/theme.py: graphite + restrained neon cyan/violet widgets, styled primary/danger buttons, text inputs, combo boxes, checkboxes, cards and scrollbars. P1 visual refresh user accepted on Windows.
+- Windows and Linux project-local install/run/update scripts are provided.
 
-Backend integration reference:
-[docs/STUDIO_CLIENT_HANDOFF.md](https://github.com/merberg-ai/Morphorum/blob/dev-backend/docs/STUDIO_CLIENT_HANDOFF.md)
-Additional backend technical references:
-[DB2_CLIENT_CONTRACT.md](https://github.com/merberg-ai/Morphorum/blob/dev-backend/docs/DB2_CLIENT_CONTRACT.md),
-[DB2_CONNECTION_MANAGER.md](https://github.com/merberg-ai/Morphorum/blob/dev-backend/docs/DB2_CONNECTION_MANAGER.md),
-[DB2_PROJECT_ASSETS.md](https://github.com/merberg-ai/Morphorum/blob/dev-backend/docs/DB2_PROJECT_ASSETS.md),
-[DB2_LIVE_RECOVERY.md](https://github.com/merberg-ai/Morphorum/blob/dev-backend/docs/DB2_LIVE_RECOVERY.md),
-[DB2_FINAL_ACCEPTANCE.md](https://github.com/merberg-ai/Morphorum/blob/dev-backend/docs/DB2_FINAL_ACCEPTANCE.md).
+### S1 authenticated LAN connection manager
+- backend/client.py: typed BackendClient (bounded timeouts, URL normalization, explicit error categories, disabled redirect following, v1 discovery validation). It is synchronous and must be called **off the Qt GUI thread**. get_json currently accepts fixed /api/... paths only, rejecting query strings: extend safely for model-family query parameters when S2 begins.
+- backend/profiles.py: saved named connection profiles with URL + stable instance_id and boot_id in nonsecret JSON; profile IDs are generated locally. Profile data is separate from bearer tokens.
+- backend/credentials.py: secure OS keyring (Windows Credential Manager) via keyring library. **Never print, log or commit bearer token values.**
+- backend/worker.py: QRunnable discovery worker with signals, invoked by ui/connections_panel.py through QThreadPool.
+- ui/connections_panel.py: create/save/remove/select profiles, import backend-issued token file into keyring, Connect/Test, Disconnect, backend version/mode/feature details. The import source file is NOT automatically deleted.
+- Passive background probing every **15 seconds** while connected. Network failures show BACKEND RECONNECTING with **10–60 second** bounded passive retry; 401/403 stop retry and show BACKEND UNAUTHORIZED; API incompatibility and identity mismatch have separate errors.
+- Changed backend instance_id triggers explicit user confirmation (not a TLS trust anchor). boot_id change is reported; **actual render-job restoration after backend restart is not implemented in Studio** (S3 task). In-flight discovery responses after user Disconnect are invalidated by an epoch.
+- Connections ownership currently resides largely in ConnectionsPanel. For S2 shared telemetry/model data, design a reusable authenticated **application-level connection/session service** or a clean signal/data facade before having other screens reach into widget internals. Ensure no duplicate health pollers and no UI-thread network traffic.
 
-The backend docs may describe their own **historical** feature-branch state; current `dev-backend` source and live feature discovery take precedence over stale headings.
+### Pre-S2 polish: P1–P4
+- ui/preferences.py wraps OS-native QSettings for **nonsecret** flags, last selected workspace, window geometry/maximized state, last selected connection ID and last successful connection ID (distinct).
+- ui/startup_settings.py provides Show splash, Restore geometry, Restore workspace, Auto-connect preferences.
+- Window size/position/maximized state and workspace are restored; offscreen restores are clamped when monitor geometry changes.
+- After startup, if opted in, the **last successful backend** is connected in the background. This does not hold the splash visible.
+- Plain-HTTP credential consent is persisted only for the selected profile ID **and exact backend URL**. Saving the trust checkbox retains it; changing URL/profile requires new approval. Missing consent blocks unattended HTTP auto-connect, rather than opening a startup security popup. Plain HTTP is suitable **only on a trusted LAN**; use TLS/VPN for untrusted links.
+- ui/splash.py shows a compact 560x430 branded splash with real startup stage messages and a 3-step progress bar. Logo automatically scales to a maximum view of 410x308.
+- Optimized image committed at assets/morphorum-studio-logo.jpg and also shipped in installable package at src/morphorum_studio/assets/splash-logo.jpg. Code loads via importlib.resources, not an assumed working directory. pyproject.toml declares the image in setuptools package-data.
+- scripts/verify_clean_install.py builds a wheel, installs it into a temporary venv and verifies the bundled logo loads via Qt; this runs in the Windows+Ubuntu CI workflow.
+- Original logo JPEG caused a Windows terminal warning: **qt.gui.imageio.jpeg: Corrupt JPEG data: 6 extraneous bytes before marker 0xc0**. It was re-encoded as valid JPEG in both locations by a one-time CI workflow, the one-time repair machinery was removed, and tests/test_splash.py now asserts **no Qt decoder warning**. Exact code commit **f91b3e6** passed dual-platform CI, including fresh-install wheel check. **A subsequent human Windows visual/terminal verification has not been explicitly documented.**
 
-## Test environment from the completed backend work
+### Tests / build
+- tests/test_shell.py, test_backend_client.py, test_profiles.py, test_connections_panel.py, test_preferences.py, test_splash.py.
+- .github/workflows/ci.yml runs Python 3.12 Qt offscreen install, compile, CLI, pytest and fresh-wheel clean-install logo smoke test for **Windows and Ubuntu**.
+- At exact f91b3e6, **both jobs completed successfully**. Rerun tests on any new implementation commit. No local Windows clean install was physically observed by the assistant; clean-install test is automated on hosted runners.
 
-- Primary Windows GPU host: HP Omen 35L, RTX 4080 SUPER 16 GB VRAM, existing checkout `D:\Morphorum-test`.
-- Backend test launcher: `.\run.bat --backend-only --lan` (backend-only default port **7866**). A known **example** local LAN endpoint was `http://192.168.1.24:7866`; treat this as environment-specific and configurable, **never hardcode it**.
-- Normal backend Web UI: `.\run.bat`, usually http://127.0.0.1:7865. Studio is independent of it.
-- Ubuntu Mini/ConnectBot was the successful remote API acceptance client. Studio Windows testing can initially run on the Omen or another Windows client on the LAN.
-- Authentication uses a bearer token or per-client credentials issued by the **backend host's** admin CLI. Do not print tokens, commit credentials, or fake a pairing-code endpoint.
-- Plain HTTP is not encrypted. Document use of **trusted LAN only** until TLS/VPN transport can be configured; no public exposure.
+## Physical Windows acceptance evidence
 
-## Proposed technology and package boundaries
+Confirmed user reports over this project's chats:
+1. S0 initial native shell, navigation, offline state and normal close: PASS.
+2. Authenticated token-file LAN connection to existing Omen backend: PASS.
+3. Backend stop/start, reconnect monitoring, boot ID change and manual disconnect: PASS.
+4. Disposable client-token revocation: Studio showed unauthorized and stopped retry: user reported PASS. Mocked wrong/revoked credential and unexpected changed-instance acceptance tests are included; **no second real backend instance test documented**.
+5. P1 visual control polish: PASS.
+6. P2 geometry, maximized state, last workspace and settings toggles persisted: PASS.
+7. After user found inert auto-connect and reset HTTP trust checkbox, fixes deployed; user reported startup reconnect and no repeated consent prompt: PASS.
+8. P3 original branded splash + loading progress: PASS.
+9. Bundled logo displayed on Windows but produced malformed-JPEG warning. Corrected re-encode completed; **CI passes, but no explicit final user confirmation that Windows terminal warning has disappeared**.
 
-- Python 3.12+ / **PySide6 Qt 6**, Windows-first, Linux next.
-- Pure client. **No CUDA, PyTorch, model downloads or dependency on shared backend directories.**
-- Split UI and network/service code: `ui/` holds Qt widgets; `backend/` (future Studio client transport namespace) holds API, reconnect, credential store, asset verification, long-lived session logic.
-- Real native widgets and media display; don't embed the old Morphorum browser UI in a WebView.
-- Never let network I/O or FFmpeg media probing block Qt's UI thread. Introduce cancellable worker/async layer when S1 begins.
-- Use OS-protected credential storage (Windows Credential Manager via Python `keyring` or equivalent) rather than JSON secrets. S0 stores no credentials.
-- Projects remain authoritative on the backend; Studio must use `If-Match` when saving. Local files only where explicitly imported/exported or cached, with checksums.
+These are incremental acceptance reports. They do not imply S2, rendering or editor behavior is implemented.
 
-## The immediately NEXT TASK after this handoff
+## Workstations, launching, and test instructions
 
-1. Check Studio `main` repo files and GitHub Actions for the scaffold. Verify the Windows/Linux CI result; fix only real failures.
-2. Ask user to run the S0 shell on Windows using the README. The physically visible UI should have nine navigable workspaces and say **BACKEND OFFLINE**. It must not start/stop the backend.
-3. User accepts or reports S0 UI issues. Fix, rerun CI, create an **S0-verified checkpoint**, if accepted.
-4. Begin **S1.1 connection foundation** on a new Studio feature branch. First implement versioned `/api/health` + `/api/client/capabilities` transport and pure mocked tests; then named profiles, secure credential storage and worker-thread Qt binding in deliberate substeps. Stop for live Windows LAN acceptance before merging.
-5. Use [ROADMAP.md](ROADMAP.md) for complete S0–S7 phase plan and checklists.
+- Windows development/test checkout in the most recent user commands: **D:\Morphorum-Studio**. Some earlier sessions used **D:\SRC\Morphorum-Studio**; prefer the user's currently reported path or ask if unsure. Backend checkout is separate: **D:\Morphorum-test** on HP Omen 35L with NVIDIA RTX 4080 SUPER 16GB.
+- Backend-only launch from backend checkout, if needed: **.\run.bat --backend-only --lan**, normally port **7866**. Illustrative previous LAN URL: http://192.168.1.24:7866. Do not hardcode a host address.
+- Backend client token management (run in backend checkout on host):
+  - .\.venv\Scripts\python.exe -m morphorum clients issue "Morphorum Studio" --days 90 --out ".\data\studio-client.token"
+  - .\.venv\Scripts\python.exe -m morphorum clients list
+  - .\.venv\Scripts\python.exe -m morphorum clients revoke CLIENT_ID
+  The secret is in the emitted token file, NOT in chat or repository.
+- Windows Studio checkout setup/update/run, with an already existing dev-ui checkout:
 
-**Do not jump directly into full Motion Lab UI before securing the API and project contract.**
+~~~powershell
+cd D:\Morphorum-Studio
+git status --short --branch
+git switch dev-ui
+.\update.ps1
+.\run.ps1
+~~~
 
-## Nonnegotiable correctness rules
+For a *new clone*, explicitly choose **dev-ui** since main remains S0:
 
-- A stable backend `instance_id` is NOT a TLS trust anchor; changed instance requires explicit user confirmation.
-- A changed `boot_id` resets ephemeral event cursors and triggers authoritative job GET.
-- Browser `Origin` headers are forbidden by backend-only mode; native client must not add them.
-- Durable `Idempotency-Key` and **identical** frozen POST body must be persisted **before** submitting GPU jobs.
-- A `409` with pending/uncertain submission is a stop-and-reconcile condition, **not** an invitation to submit under a different key.
-- SSE history is not durable. Poll job GET and list persisted frames on reconnect; never claim it is.
-- SHA-256 verify downloaded project and exported video assets before atomic replacement. Never silently overwrite a good local file with corrupt bytes.
-- Backend restart can interrupt active GPU work; don't automatically resume it. Completed media persisted through restart as physically verified.
-- Backend's **`main` stays untouched** until frontend is working and user explicitly approves draft #32.
-- Do not claim Studio features or CI/physical outcomes that have not been implemented/tested.
+~~~powershell
+git clone --branch dev-ui https://github.com/merberg-ai/Morphorum-Studio.git
+cd Morphorum-Studio
+.\setup.ps1
+.\run.ps1
+~~~
 
-## S0 accepted and S1.1 work in progress (2026-10-12)
+If git reports local changes before update, **do not discard or force-reset**; inspect the changes first. update.ps1 is a guarded fast-forward updater and should not switch branches. Studio run scripts do not start or stop the GPU backend.
 
-- User confirmed all S0 physical Windows shell tests PASS.
-- S0 Windows-verified checkpoint branch: `checkpoint/studio-s0-windows-verified-20261012`, from Studio commit `fb5024e7592a6d271a8eeb214fc2470387d2e363`. Exact checkpoint CI passed on both Windows and Linux.
-- Work branch: `feature/studio-s1-connection-foundation`. Do **not** merge pending S1 changes until physical review and user approval.
-- S1.1 pure Python typed discovery client at `src/morphorum_studio/backend/client.py`, tested using mocked HTTP in `tests/test_backend_client.py`. This is **not yet connected to the Qt interface**. No live LAN acceptance claimed.
-- User additionally requested setup/install/update/launch scripts; added `setup.ps1`, `run.ps1`, `update.ps1`, plus `setup.sh`, `run.sh`, `update.sh`. See `docs/S1_FOUNDATION.md` for security notes and usage.
-- Next physical acceptance: switch to S1 feature branch, run Windows `.\setup.ps1`, `.\run.ps1`, `.\update.ps1`; verify app still navigates nine pages offline, does not launch backend, update safely preserves current branch. Then begin S1.2 worker-backed connection panel with keyring and instance identity confirmation.
-- Ignore earlier handoff wording that says S0 physical verification is pending; this appended record supersedes it.
+Tests (after developer setup):
+~~~powershell
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe scripts\verify_clean_install.py
+~~~
+For Linux use ./setup.sh, ./run.sh, ./update.sh and the venv bin/python equivalent. Offscreen CI sets QT_QPA_PLATFORM=offscreen.
 
-## S1.2 connection manager candidate (2026-10-12)
+## What is NOT delivered / open items
 
-S1.2 implementation on `feature/studio-s1-connection-foundation` now includes `backend/profiles.py` (named, non-secret, atomic JSON profiles), `backend/credentials.py` (OS keyring tokens), `backend/worker.py` (Qt QRunnable network discovery), and `ui/connections_panel.py` (New/Save/Remove/Connect/Test/Disconnect UI, backend details, safe offline status, HTTP trust confirmation, and explicit identity mismatch approval). The Connections workspace is wired to this real panel; top-bar status changes with connection tests. The keyring package is installed in pyproject dependencies.
+- S2.1 dashboard/telemetry/model discovery: NOT STARTED. All model/media/project options must originate from backend.
+- No shared app-wide connection service for multiple workspaces yet; connection probing is owned by ConnectionsPanel.
+- No project list/open/save, ETag/If-Match 412 conflict UI, local cache or SHA-256 media download flow.
+- No still image/animation/video job submissions, no idempotency journal, SSE events, live render preview, persisted job reconciliation, user media export or FFmpeg player.
+- No native animation editor, Motion Lab, waveform analysis, gamepad/keyboard recording, prompts/keyframe timeline or New Project Wizard.
+- No distributable installer, signed app or real package release yet. Editable source installation and wheel build testing are available.
+- S1 automated host identity mismatch refusal is tested in mocks, but a **physical changed-instance acceptance with a second backend** remains optional/pending.
+- Optional UI follow-ups: high-DPI/multi-monitor manual tests, slow-backend responsiveness, missing or rejected auto-connect credentials in startup-specific integration tests, keyboard navigation/accessibility polish.
+- Corrected bundled JPEG needs a final user-visible Windows check only if the user wishes to close that last manual gate. Do not revert the repaired asset.
+- Prior documentation records chronological candidate status, some of which is obsolete. **This handoff's current-status sections supersede dated candidate claims.**
 
-**Acceptance not yet claimed:** CI on the final commit and physical Windows LAN tests must pass. The current worker model supports one-shot manual connection tests; automatic retry/backoff, long-lived reconnect state, cancel-in-flight, and persisted-session job reconciliation remain follow-up S1 hardening. Do not treat the green CONNECTED label as continuous liveness monitoring. No ability to start/stop the backend is added. Backend `main` and Studio `main` remain untouched.
+## Next implementation target: S2.1
 
-## S1.2 LAN milestone user verification (2026-10-12)
+**Do not assume S2.1 has been authorized in this new chat.** When the user asks to continue, agree on a small first increment. Recommended sequence:
+1. Verify current dev-ui and dev-backend branch tips and latest CI. Review docs/ROADMAP.md and backend contract against real API routes. Confirm relevant feature flags.
+2. Design shared, Qt-safe authenticated connection context for screens other than Connections, preserving secure token/URL/instance trust checks, without changing S1 behavior.
+3. Add typed read-only clients for real telemetry endpoints (backend docs list **GET /api/system/telemetry** and **GET /api/system/gpu-memory**) and model endpoints (**GET /api/models/families**, **GET /api/models?family=...**). Inspect real payloads before prescribing fields; URL-query support needs a safely encoded transport extension.
+4. Add off-thread bounded polling and status models. Do not block Qt event loop; throttle, handle backend unplug/reconnect/authorization failure. Render unavailable metrics as unavailable, never fabricated zero. Confirm CPU/GPU/RAM/VRAM units/labels and GPU identification against live backend.
+5. Replace Home placeholder with native overview cards and model lists, selected model defaults and ability to refresh. Controls not backed by a real supported API must be informative only or disabled, never pretend to load models or generate.
+6. Mock/fake HTTP, Qt offline/connection regression tests, wheel tests, GitHub Actions on exact SHA; STOP for user Windows physical testing. Checkpoint only after PASS. Keep dev-ui and Studio/backend main separate unless user explicitly approves merges.
 
-User confirmed Studio **connected successfully to the remote Morphorum backend over LAN** after token-file-import UX and syntax fixes. Initial authenticated backend discovery is physically PASS by user report. Both Windows and Ubuntu CI passed on correction commit `a3c01452bf630da76b6380d144c05bf943be8569`. This is not blanket S1 physical acceptance: revoked/wrong-token tests, backend restart and boot-ID refresh, identity mismatch, offline responsiveness, and reconnect behavior remain separate gates. S1.2 stays unmerged.
+Later S2.2: version-safe project list/browser, GET revision ETag, conditional PUT If-Match, explicit 412 conflict UX and new-project wizard with valid camera defaults. S2.3: project assets upload/download, hash verification and soundtrack semantics. S3: idempotent image/animation jobs and recovery, media export verification, SSE as hint with authoritative REST state. S4/S5: editing/timeline/Motion Lab and Audio Director. S6: performance/accessibility. S7: packaging/releases.
 
-## S1 reliability candidate after LAN acceptance (2026-10-12)
+## Safety and project rules worth repeating
 
-Added passive Qt-timer monitoring to the Connections panel on `feature/studio-s1-connection-foundation`. Successful authenticated discovery starts a 15-second background health+capabilities probe. Short network failures enter **BACKEND RECONNECTING** with bounded retry intervals (10–60s); no GPU job submission or backend process control. Authentication failures stop retries and show **BACKEND UNAUTHORIZED**, incompatible API stops retries, and unexpected installation identity still requires explicit human approval. Changed `boot_id` is surfaced in the connection details, but S3 job/event state reconciliation has not been built. Disconnect stops the monitor and invalidates late worker results. No token is written to project profiles.
+- **Never auto-merge or delete checkpoint branches.** Studio main and backend main are independent, both require explicit approval. Backend draft PR #32 stays unmerged until specifically authorized.
+- Do not put secrets in Git, URL queries, logs, settings JSON, test fixture results or user-facing text. Token file transfers stay local/trusted; keyring owns actual secret.
+- Native backend-only HTTP client must omit browser Origin; reject credentialed redirects.
+- instance_id continuity is not cryptographic proof; boot_id changes do not mean GPU jobs survive backend process death.
+- Save frozen full render request JSON and same Idempotency-Key to protected local journal **before** POST. Unknown/409 pending state requires reconciliation; never resubmit with a new key blindly.
+- SSE is ephemeral, REST GET + durable render manifests are authoritative. On reconnect or backend boot change, invalidate ephemeral cursors.
+- Use strong project ETag/If-Match and show 412 conflicts; never silently overwrite.
+- Download media to .part, validate size/SHA256/magic and atomically replace. Soundtrack and analyzed Motion Lab WAV are distinct.
+- Keep source, CI, docs and user physical test results synchronized; never conflate unit/CI PASS with physical Windows PASS.
 
-Automated tests cover stale responses, auth rejection and passive retry. This is a candidate pending exact-commit dual-platform CI and Windows physical acceptance. Do not create S1 accepted checkpoint or merge Studio `main` until those tests and remaining identity/credential acceptance gates pass.
-
-## S1 reliability physical acceptance (2026-10-12)
-
-**User report: PASS.** On Windows, the user confirmed the S1 monitoring acceptance sequence worked as expected: connected with existing LAN profile, backend stopped -> Studio detected/retried, backend started -> Studio reconnected, backend restart detection, and manual Disconnect stopped monitoring. GitHub Actions for implementation commit `726f4ce0c35792a84d57fba121da1583b1fbde12` passed on Windows Python 3.12 and Ubuntu Python 3.12.
-
-This acceptance covers the passive reconnect increment, not all S1 security gates. Separate physical tests for wrong/revoked token and unexpected different `instance_id` remain pending. Keep Studio `main` untouched until explicit merge approval; keep backend `main` untouched until the desktop app is working and the user authorizes backend PR #32.
-
-## S1 security closeout test candidate (2026-10-12)
-
-Following user-confirmed success on the LAN monitoring/restart test, added targeted Qt mocked regression tests for both wrong/revoked token response statuses (401 and 403), ensuring the monitor stops with BACKEND UNAUTHORIZED, and for unexpected backend instance identity where a rejected trust prompt preserves the pinned instance/boot IDs on disk and ends monitoring. Tests do not revoke real credentials or alter backend server identity. CI and real-host physical verification of wrong/revoked tokens remain acceptance gates. **Before S2.1, user specifically requested a separate discussion and improvements to Studio UI and behavior. Do not begin S2.1 until those requested changes are handled.**
+**At the end of this handoff:** no action is required while the user is paused. Source of truth for the next task is the user's new request plus live GitHub state, starting from dev-ui.

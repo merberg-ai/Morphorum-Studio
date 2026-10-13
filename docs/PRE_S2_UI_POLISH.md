@@ -48,3 +48,7 @@ User verified window size/maximized persistence and Settings checkbox persistenc
 ## P3 splash implementation candidate (2026-10-12)
 
 Code committed on dev-ui: `ui/splash.py` implements a 560x430 QSplashScreen, with three stage-driven progress-bar updates and concise status labels during actual startup work. GUI appears immediately after initialization; background auto-connect remains asynchronous and never holds splash open. `app.py` respects the persisted `show_splash` toggle. A 410x308 maximum logo view is applied with smooth scaling. The code looks for user logo at `assets/morphorum-studio-logo.png` relative to repository root; if missing, a compact text-only fallback displays. **Logo bytes are not yet bundled in GitHub**, so image-branded splash physical acceptance remains pending. CI and actual Windows testing also remain pending. Keep P3 unaccepted until the asset and test are verified.
+
+## P3 Windows physical acceptance (2026-10-12)
+
+**PASS by user report:** branded splash works as expected after manually placing the approved user logo at `assets/morphorum-studio-logo.png`. Both Windows and Ubuntu CI passed on code/docs commit `f16f65edfb0a5a3f546a110ab4c1cd68a5e5aae8`. The tested startup behavior is accepted, but the logo file itself is still **not committed** to the repository. A fresh clone without the manual asset shows text fallback; bundling and packaged-resource lookup remain a follow-up before shipping. Do not mark the logo packaging task complete or start S2.1 until final pre-S2 polish is finished.

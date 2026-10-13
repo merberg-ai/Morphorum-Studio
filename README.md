@@ -8,6 +8,12 @@
 
 **Read [docs/HANDOFF.md](docs/HANDOFF.md) first.** It is the authoritative current-state/recovery guide, with branch SHAs, physical acceptance notes, Windows commands, backend APIs, architectural invariants, open problems, and precise next steps. Then review [docs/ROADMAP.md](docs/ROADMAP.md) and [docs/PRE_S2_UI_POLISH.md](docs/PRE_S2_UI_POLISH.md).
 
+
+
+For a fresh ChatGPT conversation, this is enough to resume without reconstructing the project history:
+
+> Continue development of Morphorum Studio from https://github.com/merberg-ai/Morphorum-Studio on branch **dev-ui**. First read docs/HANDOFF.md, docs/ROADMAP.md and docs/PRE_S2_UI_POLISH.md, inspect current source/CI and the Morphorum backend dev-backend contract. Preserve current tested behavior and checkpoints. Do not merge either main branch. Let's discuss or start the next S2.1 increment.
+
 Current working branch: [dev-ui](https://github.com/merberg-ai/Morphorum-Studio/tree/dev-ui).
 Inspected source implementation SHA: **f91b3e6cf05329c1816e0c68ff7358bd11c63d07** (subsequent documentation commits may advance dev-ui).
 At that implementation SHA, GitHub Actions **Windows and Ubuntu Python 3.12 passed**, including the clean wheel-installed splash image check. Never assume a branch head or CI state without verifying it again.

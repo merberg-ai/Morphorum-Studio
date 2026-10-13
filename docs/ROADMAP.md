@@ -90,7 +90,7 @@ Incremental implementation order (stop for user review before GPU operations):
 
 ## S3. Image generation, animations, job monitoring, downloads
 
-**S3.1 Single-image and queue**
+**S3.1 Single-image and queue (IMPLEMENTED on feature/studio-s3-1-image-lab, except img2img; awaiting CI + physical Windows test, see [S3_1_IMAGE_LAB.md](S3_1_IMAGE_LAB.md))**
 - Prompt/negative prompt, model, LoRAs, seeds, batch, resolution/steps/CFG/sampler with model-valid defaults.
 - Persist *exact* body and generated idempotency key **before** each POST; don't duplicate GPU jobs on lost response.
 - Live job progress: queue, model load, per-step, ETA when available, results/preview/gallery and cancel where supported.

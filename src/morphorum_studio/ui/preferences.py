@@ -44,6 +44,12 @@ class StudioPreferences:
         items = [p for p in self.recent_projects(profile_id) if p != project_id]
         self.settings.setValue("projects/recent/" + profile_id, ",".join(items))
 
+    def image_model(self, profile_id: str) -> str:
+        return str(self.settings.value("imagelab/model/" + profile_id, "") or "")
+
+    def set_image_model(self, profile_id: str, model_id: str) -> None:
+        self.settings.setValue("imagelab/model/" + profile_id, model_id)
+
     def workspace(self) -> str:
         return str(self.settings.value("window/workspace", "Home") or "Home")
 

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
+import os
+from pathlib import Path
+
+from PySide6.QtCore import QStandardPaths, Qt, QTimer
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QFrame,
@@ -17,11 +20,14 @@ from PySide6.QtWidgets import (
 )
 
 from morphorum_studio import __version__
+from morphorum_studio.backend.images import SubmissionJournal
 from morphorum_studio.backend.session import BackendSession
 from morphorum_studio.ui import frameless
 from morphorum_studio.ui.connections_panel import ConnectionsPanel
 from morphorum_studio.ui.dashboard_service import DashboardService
 from morphorum_studio.ui.home_page import HomePage
+from morphorum_studio.ui.image_lab_page import ImageLabPage
+from morphorum_studio.ui.image_service import ImageLabService
 from morphorum_studio.ui.preferences import StudioPreferences
 from morphorum_studio.ui.projects_page import ProjectsPage
 from morphorum_studio.ui.projects_service import ProjectsService
@@ -121,7 +127,8 @@ def _label(text: str, object_name: str | None = None) -> QLabel:
 class StudioMainWindow(QMainWindow):
     """Frameless desktop shell; all navigation works offline."""
 
-    def __init__(self, preferences: StudioPreferences | None = None) -> None:
+    def __init__(self, preferences: StudioPreferences | None = None,
+                 journal_dir: str | os.PathLike | None = None) -> None:
         super().__init__()
         self.preferences = preferences or StudioPreferences()
         self.setWindowTitle(f"Morphorum Studio | {__version__}")
@@ -161,6 +168,10 @@ class StudioMainWindow(QMainWindow):
         self.session = BackendSession(self)
         self.dashboard = DashboardService(self.session, self)
         self.projects_service = ProjectsService(self.session, self)
+        if journal_dir is None:
+            journal_dir = Path(QStandardPaths.writableLocation(
+                QStandardPaths.StandardLocation.AppLocalDataLocation)) / "submissions"
+        self.image_service = ImageLabService(self.session, SubmissionJournal(journal_dir), self)
         self.pages = QStackedWidget()
         self.pages.setObjectName("pages")
         for page_name, title, description in PAGES:
@@ -178,6 +189,12 @@ class StudioMainWindow(QMainWindow):
                     lambda: self.navigation.setCurrentRow(names.index("Connections"))
                 )
                 self.pages.addWidget(self.projects_page)
+            elif page_name == "Image Lab":
+                self.image_lab_page = ImageLabPage(self.session, self.image_service, self.preferences)
+                self.image_lab_page.open_connections.connect(
+                    lambda: self.navigation.setCurrentRow(names.index("Connections"))
+                )
+                self.pages.addWidget(self.image_lab_page)
             elif page_name == "Connections":
                 self.connections_panel = ConnectionsPanel(
                     preferences=self.preferences, session=self.session
@@ -198,6 +215,9 @@ class StudioMainWindow(QMainWindow):
         )
         self.navigation.currentRowChanged.connect(
             lambda row: self.projects_page.set_active(row == names.index("Projects"))
+        )
+        self.navigation.currentRowChanged.connect(
+            lambda row: self.image_lab_page.set_active(row == names.index("Image Lab"))
         )
         self.connection_status.clicked.connect(
             lambda *_: self.navigation.setCurrentRow(names.index("Connections"))

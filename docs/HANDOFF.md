@@ -182,3 +182,6 @@ See docs/S2_2_PROJECTS.md. Stacked on feature/studio-s2-1-dashboard. Name/notes 
 
 ## S2.3 media (branch feature/studio-s2-3-assets)
 See docs/S2_3_ASSETS.md. Stacked on feature/studio-s2-2-projects. Source image + soundtrack upload, verified save-copy. Awaiting CI and a physical Windows test. Nothing merged.
+
+## S3.1 Image Lab (branch feature/studio-s3-1-image-lab)
+See docs/S3_1_IMAGE_LAB.md. Stacked on feature/studio-s2-4-polish. Durable journalled submissions with Idempotency-Key, REST job polling, viewer. First GPU-starting feature: test with a small model. Awaiting CI and a physical Windows test. Nothing merged.

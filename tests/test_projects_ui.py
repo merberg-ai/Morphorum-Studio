@@ -1,5 +1,6 @@
 """Projects service and page against an in-memory fake backend (offscreen Qt, CI only)."""
 
+import hashlib
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -31,6 +32,8 @@ class Store:
         }
         self.calls = []
         self.fail = {}
+        self.source = None  # bytes
+        self.audio = None  # {"data", "filename", "offset"}
 
     def project(self, pid):
         p = self.projects[pid]
@@ -53,6 +56,24 @@ class Client:
             return {"projects": [{"id": k, "name": v["name"]} for k, v in self.s.projects.items()]}
         if path.endswith("/renders"):
             return {"renders": []}
+        if path.endswith("/assets"):
+            items = []
+            if self.s.source:
+                sha = hashlib.sha256(self.s.source).hexdigest()
+                items.append({"kind": "source_image", "id": "source-image", "filename": "source.png",
+                              "bytes": len(self.s.source), "media_type": "image/png", "sha256": sha})
+            if self.s.audio:
+                sha = hashlib.sha256(self.s.audio["data"]).hexdigest()
+                items.append({"kind": "soundtrack", "id": sha, "filename": self.s.audio["filename"],
+                              "bytes": len(self.s.audio["data"]), "media_type": "audio/wav", "sha256": sha})
+            return {"assets": items}
+        if path.endswith("/motion-import/soundtrack"):
+            a = self.s.audio
+            if not a:
+                return {"soundtrack": None}
+            return {"soundtrack": {"sha256": hashlib.sha256(a["data"]).hexdigest(), "format": "wav",
+                                   "filename": a["filename"], "bytes": len(a["data"]),
+                                   "offset_seconds": a["offset"]}}
         raise BackendError("NOT_FOUND", "no", 404)
 
     def get_json_etag(self, path, params=None):
@@ -63,9 +84,34 @@ class Client:
             raise BackendError("NOT_FOUND", "gone", 404)
         return self.s.project(pid), etag(self.s.projects[pid]["rev"])
 
+    def upload_bytes(self, path, data, headers):
+        self.s.calls.append(("UPLOAD", path, headers))
+        self._maybe_fail("UPLOAD")
+        if path.endswith("/source-image"):
+            self.s.source = data
+            self.s.projects["alpha"]["rev"] += 1  # the backend saved the project
+        else:
+            from urllib.parse import unquote
+            self.s.audio = {"data": data, "filename": unquote(headers["X-Audio-Filename"]),
+                            "offset": float(headers["X-Audio-Offset-Seconds"])}
+        return {"status": "ok"}
+
+    def download(self, path, sink, max_bytes):
+        self.s.calls.append(("DOWNLOAD", path))
+        data = self.s.source if path.endswith("/source-image") else self.s.audio["data"]
+        sink(data)
+        return len(data), hashlib.sha256(data).hexdigest(), None
+
     def send_json(self, method, path, body=None, *, if_match=None):
         self.s.calls.append((method, path, body, if_match))
         self._maybe_fail(method)
+        if path.endswith("/source-image"):
+            self.s.source = None
+            self.s.projects["alpha"]["rev"] += 1
+            return {"status": "cleared"}, None
+        if path.endswith("/soundtrack-offset"):
+            self.s.audio["offset"] = body["offset_seconds"]
+            return {"soundtrack": {}}, None
         if method == "POST":
             pid = body["name"].lower().replace(" ", "-")
             self.s.projects[pid] = {"name": body["name"], "notes": "", "rev": 1}
@@ -407,3 +453,166 @@ def test_main_window_wiring(tmp_path):
         assert window.navigation.currentRow() == names.index("Connections")
     finally:
         window.close()
+
+
+# ----------------------------------------------------------------------------- media
+
+PNG = b"\x89PNG" + b"0" * 64
+WAV = b"RIFF\x00\x00\x00\x00WAVE" + b"1" * 64
+
+
+def pick(monkeypatch, open_path=None, save_path=None):
+    from PySide6.QtWidgets import QFileDialog
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (open_path or "", ""))
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (save_path or "", ""))
+
+
+def test_media_card_shows_existing_assets(tmp_path):
+    store, session, service, prefs, page = make(tmp_path, connect=False)
+    store.audio = {"data": WAV, "filename": "song.wav", "offset": 1.25}
+    session.connected(info(features=FEATURES), "tok")
+    page.set_active(True)
+    page._select("alpha")
+    card = page.assets_card
+    assert "song.wav" in card.audio_text.text() and card.offset.value() == 1.25
+    assert card.source_text.text() == "No source image attached."
+    assert not card.source_copy.isEnabled() and card.audio_copy.isEnabled()
+    assert card.audio_choose.text() == "Replace audio…"
+
+
+def test_upload_source_reloads_project_revision(tmp_path, monkeypatch):
+    store, session, service, prefs, page = make(tmp_path)
+    page.set_active(True)
+    page._select("alpha")
+    old_etag = page._etag
+    img = tmp_path / "pic.png"
+    img.write_bytes(PNG)
+    pick(monkeypatch, open_path=str(img))
+    page.assets_card.source_choose.click()
+    assert store.source is not None
+    assert page._etag != old_etag  # the page re-read the project after the backend saved it
+    assert "source.png" in page.assets_card.source_text.text()
+    # A save with the new revision now succeeds.
+    page.name_edit.setText("Alpha 3")
+    page.save_button.click()
+    assert store.projects["alpha"]["name"] == "Alpha 3"
+
+
+def test_source_changes_paused_while_editing(tmp_path):
+    store, session, service, prefs, page = make(tmp_path)
+    page.set_active(True)
+    page._select("alpha")
+    card = page.assets_card
+    assert card.source_choose.isEnabled()
+    page.name_edit.setText("dirty")
+    assert not card.source_choose.isEnabled() and "Save or revert" in card.source_note.text()
+    assert card.audio_choose.isEnabled()
+    page.revert_button.click()
+    assert card.source_choose.isEnabled()
+
+
+def test_remove_source_confirmation(tmp_path, monkeypatch):
+    store, session, service, prefs, page = make(tmp_path, connect=False)
+    store.source = PNG
+    session.connected(info(features=FEATURES), "tok")
+    page.set_active(True)
+    page._select("alpha")
+    answer(monkeypatch, QMessageBox.StandardButton.Cancel)
+    page.assets_card.source_remove.click()
+    assert store.source == PNG
+    answer(monkeypatch, QMessageBox.StandardButton.Yes)
+    page.assets_card.source_remove.click()
+    assert store.source is None and page.assets_card.source_text.text() == "No source image attached."
+
+
+def test_attach_audio_and_offset(tmp_path, monkeypatch):
+    store, session, service, prefs, page = make(tmp_path)
+    page.set_active(True)
+    page._select("alpha")
+    card = page.assets_card
+    song = tmp_path / "my song.wav"
+    song.write_bytes(WAV)
+    pick(monkeypatch, open_path=str(song))
+    card.offset.setValue(0.5)
+    card.audio_choose.click()
+    assert store.audio["filename"] == "my song.wav" and store.audio["offset"] == 0.5
+    assert "my song.wav" in card.audio_text.text() and not card.offset_apply.isEnabled()
+    card.offset.setValue(-2.0)
+    assert card.offset_apply.isEnabled()
+    card.offset_apply.click()
+    assert store.audio["offset"] == -2.0 and not card.offset_apply.isEnabled()
+
+
+def test_cancelled_pickers_do_nothing(tmp_path, monkeypatch):
+    store, session, service, prefs, page = make(tmp_path)
+    page.set_active(True)
+    page._select("alpha")
+    pick(monkeypatch)
+    page.assets_card.source_choose.click()
+    page.assets_card.audio_choose.click()
+    assert not any(c[0] == "UPLOAD" for c in store.calls)
+
+
+def test_upload_failure_is_reported(tmp_path, monkeypatch):
+    store, session, service, prefs, page = make(tmp_path)
+    page.set_active(True)
+    page._select("alpha")
+    img = tmp_path / "pic.png"
+    img.write_bytes(PNG)
+    pick(monkeypatch, open_path=str(img))
+    asked = answer(monkeypatch)
+    store.fail["UPLOAD"] = BackendError("INVALID_REQUEST", "Backend returned HTTP 400: bad image", 400)
+    page.assets_card.source_choose.click()
+    assert any(a[0] == "warn" and a[1] == "Could not upload the image" for a in asked if isinstance(a, tuple))
+    assert store.source is None and service.mutating is False
+
+
+def test_local_validation_error_is_reported(tmp_path, monkeypatch):
+    store, session, service, prefs, page = make(tmp_path)
+    page.set_active(True)
+    page._select("alpha")
+    bad = tmp_path / "notes.txt"
+    bad.write_text("x")
+    pick(monkeypatch, open_path=str(bad))
+    asked = answer(monkeypatch)
+    # The real worker reports ValueError as INVALID_INPUT; mirror that here.
+    service._run = _run_catching
+    page.assets_card.source_choose.click()
+    assert any(a[0] == "warn" and "Choose a supported image file" in a[2] for a in asked if isinstance(a, tuple))
+    assert not any(c[0] == "UPLOAD" for c in store.calls)
+
+
+def _run_catching(client, fn, callback):
+    try:
+        callback(fn(client), None)
+    except ValueError as exc:
+        callback(None, ("INVALID_INPUT", str(exc)))
+
+
+def test_save_copy_writes_verified_file(tmp_path, monkeypatch):
+    store, session, service, prefs, page = make(tmp_path, connect=False)
+    store.audio = {"data": WAV, "filename": "song.wav", "offset": 0.0}
+    session.connected(info(features=FEATURES), "tok")
+    page.set_active(True)
+    page._select("alpha")
+    out = tmp_path / "out.wav"
+    pick(monkeypatch, save_path=str(out))
+    page.assets_card.audio_copy.click()
+    assert out.read_bytes() == WAV and "Saved a verified copy" in page.assets_card.audio_note.text()
+
+
+def test_card_clears_on_disconnect_and_trash(tmp_path, monkeypatch):
+    store, session, service, prefs, page = make(tmp_path, connect=False)
+    store.audio = {"data": WAV, "filename": "song.wav", "offset": 0.0}
+    session.connected(info(features=FEATURES), "tok")
+    page.set_active(True)
+    page._select("alpha")
+    assert page.assets_card._project == "alpha"
+    session.disconnected()
+    assert page.assets_card._project is None and not page.assets_card.audio_choose.isEnabled()
+
+
+def test_format_bytes():
+    from morphorum_studio.ui.assets_card import format_bytes
+    assert format_bytes(None) == "—" and format_bytes(512) == "512 B"
+    assert format_bytes(1536) == "1.5 KiB" and format_bytes(5 * 1024**2) == "5.0 MiB"

@@ -76,7 +76,7 @@ Incremental implementation order (stop for user review before GPU operations):
 - New Project Wizard based on backend's project template; address known historical invalid 3D camera settings through validated defaults and tests rather than copying bad values.
 - Unsaved-change prompts, session restore and recent-project history.
 
-**S2.3 Project-owned assets**
+**S2.3 Project-owned assets (PARTLY IMPLEMENTED on feature/studio-s2-3-assets: source image + soundtrack; awaiting CI + physical Windows test, see [S2_3_ASSETS.md](S2_3_ASSETS.md))**
 - Upload selected local PNG source image, import soundtrack WAV/MP3/OGG/FLAC and analyze Motion Lab WAV using real API limits.
 - Download/list assets and validate sizes/SHA-256; atomic `.part` replacement and private local cache.
 - Distinguish server-relative asset URL from local path; no shared path assumptions.

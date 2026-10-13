@@ -9,6 +9,7 @@ from typing import Any
 
 from PySide6.QtCore import QObject, Signal
 
+from morphorum_studio.backend.assets import Asset, AssetsApi
 from morphorum_studio.backend.client import BackendClient
 from morphorum_studio.backend.projects import ProjectsApi, RenderSummary
 from morphorum_studio.backend.session import BackendSession
@@ -22,6 +23,10 @@ class ProjectsService(QObject):
     saved = Signal(object, str)  # ProjectDetail, new etag
     trashed = Signal(str)  # project id
     failed = Signal(str, str, str)  # operation, error code, message
+    assets_loaded = Signal(str, object, object)  # project id, tuple[Asset], Soundtrack | None
+    preview_loaded = Signal(str, object)  # project id, image bytes | None
+    asset_changed = Signal(str, str, object)  # operation, project id, Soundtrack | None
+    copy_saved = Signal(str)  # final path
     busy_changed = Signal(bool)
     cleared = Signal()
 
@@ -34,6 +39,9 @@ class ProjectsService(QObject):
         self._listing = False
         self._open_seq = 0
         self._mutating = False
+        self._assets_seq = 0
+        self._preview_seq = 0
+        self._copying = False
         session.changed.connect(self._session_changed)
 
     # -- state --------------------------------------------------------------------------
@@ -47,14 +55,21 @@ class ProjectsService(QObject):
     def mutating(self) -> bool:
         return self._mutating
 
-    def _client(self) -> BackendClient | None:
-        return self._session.client(timeout=10.0) if self.available else None
+    @property
+    def copying(self) -> bool:
+        return self._copying
+
+    def _client(self, timeout: float = 10.0) -> BackendClient | None:
+        return self._session.client(timeout=timeout) if self.available else None
 
     def _session_changed(self) -> None:
         if self._session.epoch != self._epoch:
             self._epoch = self._session.epoch
             self._listing = False
             self._open_seq += 1
+            self._assets_seq += 1
+            self._preview_seq += 1
+            self._copying = False
             if self._mutating:
                 self._mutating = False
                 self.busy_changed.emit(False)
@@ -121,8 +136,84 @@ class ProjectsService(QObject):
     def trash(self, project_id: str) -> None:
         self._mutate("trash", lambda c: (ProjectsApi(c).trash(project_id), project_id)[1])
 
-    def _mutate(self, kind: str, fn: Callable[[BackendClient], Any]) -> None:
+    # -- assets (S2.3) --------------------------------------------------------------------
+
+    def load_assets(self, project_id: str) -> None:
         client = self._client()
+        if client is None:
+            return
+        self._assets_seq += 1
+        seq, epoch = self._assets_seq, self._session.epoch
+
+        def work(c: BackendClient):
+            api = AssetsApi(c)
+            return api.catalogue(project_id), api.soundtrack(project_id)
+
+        def done(result, error):
+            if self._stale(epoch) or seq != self._assets_seq:
+                return
+            if error:
+                self.failed.emit("assets", *error)
+            else:
+                self.assets_loaded.emit(project_id, *result)
+
+        self._run(client, work, done)
+
+    def load_preview(self, project_id: str, asset: Asset) -> None:
+        client = self._client(30.0)
+        if client is None:
+            return
+        self._preview_seq += 1
+        seq, epoch = self._preview_seq, self._session.epoch
+
+        def done(result, error):
+            if self._stale(epoch) or seq != self._preview_seq:
+                return
+            if error:
+                self.preview_loaded.emit(project_id, None)  # A missing thumbnail is not an error.
+            else:
+                self.preview_loaded.emit(project_id, result)
+
+        self._run(client, lambda c: AssetsApi(c).preview_source(project_id, asset), done)
+
+    def upload_source(self, project_id: str, path: str) -> None:
+        self._mutate("source_upload", lambda c: (AssetsApi(c).upload_source(project_id, path), project_id, None),
+                     timeout=60.0)
+
+    def clear_source(self, project_id: str) -> None:
+        self._mutate("source_clear", lambda c: (AssetsApi(c).clear_source(project_id), project_id, None))
+
+    def attach_soundtrack(self, project_id: str, path: str, offset: float) -> None:
+        self._mutate("audio_attach", lambda c: (None, project_id,
+                     AssetsApi(c).attach_soundtrack(project_id, path, offset)), timeout=60.0)
+
+    def set_offset(self, project_id: str, offset: float) -> None:
+        self._mutate("audio_offset", lambda c: (None, project_id, AssetsApi(c).set_offset(project_id, offset)))
+
+    def save_copy(self, project_id: str, asset: Asset, destination: str) -> None:
+        client = self._client(60.0)
+        if client is None or self._copying:
+            return
+        self._copying = True
+        self.busy_changed.emit(self._mutating)
+        epoch = self._session.epoch
+
+        def done(result, error):
+            if self._stale(epoch):
+                return
+            self._copying = False
+            self.busy_changed.emit(self._mutating)
+            if error:
+                self.failed.emit("copy", *error)
+            else:
+                self.copy_saved.emit(result)
+
+        self._run(client, lambda c: AssetsApi(c).save_copy(project_id, asset, destination), done)
+
+    # -- shared mutation plumbing ---------------------------------------------------------
+
+    def _mutate(self, kind: str, fn: Callable[[BackendClient], Any], timeout: float = 10.0) -> None:
+        client = self._client(timeout)
         if client is None or self._mutating:
             return
         self._mutating = True
@@ -142,5 +233,8 @@ class ProjectsService(QObject):
             self.created.emit(result)
         elif kind == "save":
             self.saved.emit(*result)
-        else:
+        elif kind == "trash":
             self.trashed.emit(result)
+        else:
+            _, project_id, soundtrack = result
+            self.asset_changed.emit(kind, project_id, soundtrack)

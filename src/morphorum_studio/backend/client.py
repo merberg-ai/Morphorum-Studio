@@ -5,6 +5,7 @@ No Qt imports: callers must run network operations off the UI thread.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import json
 import re
 import socket
@@ -112,6 +113,9 @@ def _encode_query(params: Mapping[str, str | int | None] | None) -> str:
 
 _ETAG = re.compile(r'"[0-9a-f]{64}"')
 MAX_REQUEST_BYTES = 262_144
+MAX_UPLOAD_BYTES = 48 * 1024 * 1024
+_UPLOAD_HEADERS = frozenset({"X-Content-SHA256", "X-Filename", "X-Audio-Filename",
+                             "X-Audio-Offset-Seconds"})
 
 
 def _error_detail(exc: HTTPError) -> str:
@@ -178,10 +182,71 @@ class BackendClient:
                 raise ValueError("request body too large")
         return self._request(method, path, None, data, if_match, include_detail=True)
 
+    def upload_bytes(self, path: str, data: bytes, headers: Mapping[str, str]) -> dict[str, Any]:
+        """One raw-body POST (source image or soundtrack). Never retried.
+
+        Only the backend's documented upload headers are allowed and their values must be plain
+        printable ASCII; the caller supplies the SHA-256 so the backend can verify the transfer.
+        """
+        if not data or len(data) > MAX_UPLOAD_BYTES:
+            raise ValueError("upload must be between 1 byte and 48 MiB")
+        clean: dict[str, str] = {}
+        for name, value in headers.items():
+            if name not in _UPLOAD_HEADERS or not isinstance(value, str) \
+                    or not re.fullmatch(r"[\x20-\x7e]{1,300}", value):
+                raise ValueError("upload header not allowed")
+            clean[name] = value
+        return self._request("POST", path, None, data, None, include_detail=True,
+                             content_type="application/octet-stream", extra_headers=clean)[0]
+
+    def download(self, path: str, sink, max_bytes: int) -> tuple[int, str, str | None]:
+        """Stream a binary response into ``sink(chunk)``; returns (size, sha256, advertised sha256).
+
+        Refuses redirects and anything over ``max_bytes``. The caller decides what to do with a
+        digest mismatch, and removes whatever ``sink`` wrote when this raises.
+        """
+        if not _API_PATH.fullmatch(path):
+            raise ValueError("only fixed backend API paths are allowed")
+        headers = {"User-Agent": "Morphorum-Studio/0.1"}
+        if self._token:
+            headers["Authorization"] = "Bearer " + self._token
+        request = Request(self.base_url + path, headers=headers, method="GET")
+        digest = hashlib.sha256()
+        total = 0
+        try:
+            with self._opener.open(request, timeout=self.timeout) as response:
+                if not 200 <= response.status < 300:
+                    raise BackendError(_ERROR_CODES.get(response.status, "HTTP_ERROR"),
+                                       f"Backend returned HTTP {response.status}", response.status)
+                advertised = response.headers.get("X-Content-SHA256")
+                if advertised is not None and not re.fullmatch(r"[0-9a-f]{64}", advertised):
+                    advertised = None
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > max_bytes:
+                        raise BackendError("INVALID_RESPONSE", "Download is larger than expected")
+                    digest.update(chunk)
+                    sink(chunk)
+        except HTTPError as exc:
+            if 300 <= exc.code < 400:
+                raise BackendError("REDIRECT_REJECTED", "Backend redirected a download", exc.code) from exc
+            detail = _error_detail(exc)
+            raise BackendError(_ERROR_CODES.get(exc.code, "HTTP_ERROR"),
+                               f"Backend returned HTTP {exc.code}" + (f": {detail}" if detail else ""),
+                               exc.code) from exc
+        except (URLError, socket.timeout, TimeoutError, ConnectionError, OSError) as exc:
+            raise BackendError("NETWORK_ERROR", "Unable to reach backend") from exc
+        return total, digest.hexdigest(), advertised
+
     def _request(self, method: str, path: str,
                  params: Mapping[str, str | int | None] | None = None,
                  data: bytes | None = None, if_match: str | None = None,
-                 include_detail: bool = False) -> tuple[dict[str, Any], str | None]:
+                 include_detail: bool = False, content_type: str = "application/json",
+                 extra_headers: Mapping[str, str] | None = None
+                 ) -> tuple[dict[str, Any], str | None]:
         if not _API_PATH.fullmatch(path):
             raise ValueError("only fixed backend API paths are allowed")
         query = _encode_query(params)
@@ -189,7 +254,9 @@ class BackendClient:
         if self._token:
             headers["Authorization"] = "Bearer " + self._token
         if data is not None:
-            headers["Content-Type"] = "application/json"
+            headers["Content-Type"] = content_type
+        if extra_headers:
+            headers.update(extra_headers)
         if if_match is not None:
             headers["If-Match"] = if_match
         request = Request(self.base_url + path + query, data=data, headers=headers, method=method)

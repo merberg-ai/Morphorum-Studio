@@ -462,6 +462,12 @@ QLabel#metricValue {
 QLabel#metricValue[stale="true"] {
     color: $faint;
 }
+QLabel#assetThumb {
+    background: $void;
+    border: 1px solid $line;
+    border-radius: 10px;
+    color: $faint;
+}
 QLabel#notice {
     color: #ffd592;
     background: rgba(246, 185, 76, 23);

@@ -39,6 +39,7 @@ from morphorum_studio.backend.projects import (
     RenderSummary,
 )
 from morphorum_studio.backend.session import BackendSession
+from morphorum_studio.ui.assets_card import AssetsCard
 from morphorum_studio.ui.preferences import StudioPreferences
 from morphorum_studio.ui.projects_service import ProjectsService
 
@@ -247,6 +248,10 @@ class ProjectsPage(QFrame):
         ibox.addLayout(grid)
         dbox.addWidget(info)
 
+        self.assets_card = AssetsCard(self._service)
+        self.assets_card.project_changed.connect(self._reload_after_asset_change)
+        dbox.addWidget(self.assets_card)
+
         renders = QFrame()
         renders.setObjectName("card")
         rbox = QVBoxLayout(renders)
@@ -326,6 +331,7 @@ class ProjectsPage(QFrame):
         self.project_list.clear()
         self.project_list.blockSignals(False)
         self.recent_combo.clear()
+        self.assets_card.set_project(None)
         self.detail_stack.setCurrentIndex(0)
         self.empty_detail.setText("")
 
@@ -340,6 +346,7 @@ class ProjectsPage(QFrame):
         if self._selected and self._selected not in ids and not self.has_unsaved_changes():
             self._selected = None
             self._loaded = None
+            self.assets_card.set_project(None)
             self.detail_stack.setCurrentIndex(0)
         if self._restore_pending:
             self._restore_pending = False
@@ -409,6 +416,7 @@ class ProjectsPage(QFrame):
         self._selected = project_id
         self._loaded = None
         self._etag = None
+        self.assets_card.set_project(None)
         self.detail_stack.setCurrentIndex(0)
         self.empty_detail.setText("Opening project…")
         self._apply_filter()
@@ -457,6 +465,7 @@ class ProjectsPage(QFrame):
         info["Created"].setText(format_when(detail.created_at))
         info["Updated"].setText(format_when(detail.updated_at))
         self.detail_stack.setCurrentIndex(1)
+        self.assets_card.set_project(detail.id)
         self._edited()
 
     def _show_renders(self, renders: tuple[RenderSummary, ...] | None) -> None:
@@ -485,6 +494,7 @@ class ProjectsPage(QFrame):
 
     def _edited(self) -> None:
         self.dirty_label.setText("Unsaved changes" if self.has_unsaved_changes() else "")
+        self.assets_card.set_locked(self.has_unsaved_changes())
         self._update_buttons()
 
     def _update_buttons(self) -> None:
@@ -501,6 +511,11 @@ class ProjectsPage(QFrame):
         self.trash_button.setEnabled(available and has_project and not busy)
         for widget in (self.name_edit, self.notes_edit):
             widget.setEnabled(available and not busy)
+
+    def _reload_after_asset_change(self) -> None:
+        # The source image changed the project's revision; fetch the new ETag (form is clean).
+        if self._selected:
+            self._service.open(self._selected)
 
     def _revert(self) -> None:
         if self._loaded is not None and self._etag is not None:
@@ -560,6 +575,7 @@ class ProjectsPage(QFrame):
         if project_id == self._selected:
             self._selected = None
             self._loaded = None
+            self.assets_card.set_project(None)
             self.detail_stack.setCurrentIndex(0)
             self.empty_detail.setText("Project moved to the backend's Trash.")
         self._service.refresh()
@@ -573,6 +589,9 @@ class ProjectsPage(QFrame):
             self.empty_detail.setText(f"Could not open this project ({code}).")
             self.detail_stack.setCurrentIndex(0)
             self._loaded = None
+            self.assets_card.set_project(None)
+        elif operation == "assets":
+            self.dirty_label.setText(f"Could not load project media ({code}).")
         elif operation == "save" and code == "PRECONDITION_FAILED":
             self._conflict()
         else:
@@ -582,7 +601,12 @@ class ProjectsPage(QFrame):
                          "dropped. Check the project list before trying again.")
                 self._service.refresh()
             titles = {"save": "Could not save", "create": "Could not create the project",
-                      "trash": "Could not move to Trash"}
+                      "trash": "Could not move to Trash",
+                      "source_upload": "Could not upload the image",
+                      "source_clear": "Could not remove the image",
+                      "audio_attach": "Could not attach the soundtrack",
+                      "audio_offset": "Could not change the offset",
+                      "copy": "Could not save the copy"}
             QMessageBox.warning(self, titles.get(operation, "Request failed"), message + extra)
         self._update_buttons()
 

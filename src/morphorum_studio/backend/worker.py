@@ -49,6 +49,9 @@ class ApiWorker(QRunnable):
             result = self._fn(self._client)
         except BackendError as error:
             self.signals.completed.emit(None, (error.code, str(error)))
+        except ValueError as error:
+            # Our own pre-flight checks (bad file type, too large, offset out of range).
+            self.signals.completed.emit(None, ("INVALID_INPUT", str(error)[:200]))
         except Exception:
             self.signals.completed.emit(None, ("CONNECTION_ERROR", "Backend request failed"))
         else:

@@ -179,3 +179,6 @@ See docs/S2_1_DASHBOARD.md. Stacked on feature/studio-ui-shell. Read-only; await
 
 ## S2.2 projects (branch feature/studio-s2-2-projects)
 See docs/S2_2_PROJECTS.md. Stacked on feature/studio-s2-1-dashboard. Name/notes edit with ETag/If-Match, create, trash. Awaiting CI and a physical Windows test. Nothing merged.
+
+## S2.3 media (branch feature/studio-s2-3-assets)
+See docs/S2_3_ASSETS.md. Stacked on feature/studio-s2-2-projects. Source image + soundtrack upload, verified save-copy. Awaiting CI and a physical Windows test. Nothing merged.

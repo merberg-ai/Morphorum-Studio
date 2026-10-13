@@ -415,6 +415,49 @@ QListWidget::item:selected, QListView::item:selected {
     background: $hover;
     color: $text;
 }
+
+/* ---------- cards and form text ---------- */
+QScrollArea#connectionsScroll, QWidget#connectionsContent {
+    background: $base;
+    border: none;
+}
+QFrame#card {
+    background: $panel;
+    border: 1px solid $line2;
+    border-radius: 14px;
+}
+QLabel#cardTitle {
+    font-family: "$font_display", "Segoe UI", sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    color: $text;
+}
+QLabel#fieldLabel {
+    color: $dim;
+    font-size: 12px;
+    font-weight: 500;
+}
+QLabel#hint {
+    color: $faint;
+    font-size: 12px;
+}
+QLabel#connectionDetails {
+    color: $dim;
+    font-size: 13px;
+}
+QToolButton#linkButton {
+    border: none;
+    color: $cyan;
+    font-weight: 500;
+    padding: 2px 0px;
+}
+QToolButton#linkButton:hover {
+    color: #9ee8ff;
+}
+QCheckBox {
+    spacing: 9px;
+    color: $text;
+}
 """
 )
 

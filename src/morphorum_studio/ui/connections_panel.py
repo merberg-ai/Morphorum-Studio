@@ -4,10 +4,11 @@ from __future__ import annotations
 from urllib.parse import urlsplit
 from pathlib import Path
 
-from PySide6.QtCore import QThreadPool, Signal, QTimer
+from PySide6.QtCore import QThreadPool, Qt, Signal, QTimer
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
-    QMessageBox, QPushButton, QVBoxLayout, QWidget, QFileDialog, QGroupBox
+    QApplication, QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit,
+    QMessageBox, QPushButton, QScrollArea, QSizePolicy, QToolButton, QVBoxLayout,
+    QWidget, QFileDialog
 )
 
 from morphorum_studio.backend.client import BackendError, normalize_base_url
@@ -47,68 +48,7 @@ class ConnectionsPanel(QWidget):
         self._monitor = QTimer(self)
         self._monitor.setInterval(15000)
         self._monitor.timeout.connect(self._monitor_tick)
-        layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("BACKEND CONNECTIONS / STUDIO"))
-        layout.addWidget(QLabel("Connect to an existing Morphorum GPU backend. No local GPU needed."))
-        self.selector = QComboBox()
-        self.selector.currentIndexChanged.connect(self.select_profile)
-        layout.addWidget(self.selector)
-        form = QFormLayout()
-        self.name = QLineEdit()
-        self.url = QLineEdit()
-        self.url.setPlaceholderText("http://127.0.0.1:7866")
-        self.token = QLineEdit()
-        self.token.setEchoMode(QLineEdit.EchoMode.Password)
-        self.token.setPlaceholderText("Stored in OS credential manager; blank keeps existing")
-        form.addRow("Profile name", self.name)
-        form.addRow("Backend URL", self.url)
-        form.addRow("Bearer token", self.token)
-        layout.addLayout(form)
-        # Provisioning is local: reading/saving a token does not transmit it.
-        credentials_group = QGroupBox("Client credential")
-        credential_layout = QVBoxLayout(credentials_group)
-        self.import_button = QPushButton("Browse and import token file…")
-        self.import_button.setObjectName("primaryAction")
-        self.import_button.setToolTip("Select a token file from this PC or a trusted mapped share")
-        credential_layout.addWidget(self.import_button)
-        self.credential_status = QLabel("No token imported for this session.")
-        self.credential_status.setWordWrap(True)
-        credential_layout.addWidget(self.credential_status)
-        self.trust_http = QCheckBox(
-            "Allow sending this credential over HTTP on my trusted LAN"
-        )
-        credential_layout.addWidget(self.trust_http)
-        guide = QLabel(
-            "1. On the GPU host, issue a client token with the command below.\n"
-            "2. Transfer the token file securely or browse a trusted network share.\n"
-            "3. Import it, then choose Connect / Test."
-        )
-        guide.setWordWrap(True)
-        credential_layout.addWidget(guide)
-        self.issue_command = QLineEdit(
-            '.\\.venv\\Scripts\\python.exe -m morphorum clients issue '
-            '"Morphorum Studio" --days 90 --out ".\\data\\studio-client.token"'
-        )
-        self.issue_command.setReadOnly(True)
-        self.issue_command.setToolTip("Run this in PowerShell inside the Morphorum backend checkout")
-        credential_layout.addWidget(self.issue_command)
-        layout.addWidget(credentials_group)
-        buttons = QHBoxLayout()
-        self.new_button = QPushButton("New")
-        self.save_button = QPushButton("Save profile")
-        self.remove_button = QPushButton("Remove")
-        self.remove_button.setObjectName("dangerAction")
-        self.test_button = QPushButton("Connect / Test")
-        self.test_button.setObjectName("primaryAction")
-        self.disconnect_button = QPushButton("Disconnect")
-        for button in (self.new_button, self.save_button, self.remove_button,
-                       self.test_button, self.disconnect_button):
-            buttons.addWidget(button)
-        layout.addLayout(buttons)
-        self.details = QLabel("No backend connected.")
-        self.details.setWordWrap(True)
-        layout.addWidget(self.details)
-        layout.addStretch()
+        self._build_ui()
         self.import_button.clicked.connect(self.import_token_file)
         self.new_button.clicked.connect(self.new_profile)
         self.save_button.clicked.connect(self.save_profile)
@@ -119,6 +59,184 @@ class ConnectionsPanel(QWidget):
         self.refresh()
         if self._load_warning:
             self.details.setText(self._load_warning)
+
+    # ---- layout -------------------------------------------------------------------
+
+    @staticmethod
+    def _fixed(button: QPushButton, min_width: int = 0) -> QPushButton:
+        """Buttons keep their natural size instead of stretching across the card."""
+        button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        if min_width:
+            button.setMinimumWidth(min_width)
+        return button
+
+    @staticmethod
+    def _label(text: str, name: str, wrap: bool = True) -> QLabel:
+        label = QLabel(text)
+        label.setObjectName(name)
+        label.setWordWrap(wrap)
+        return label
+
+    def _card(self, title: str) -> tuple[QFrame, QVBoxLayout]:
+        card = QFrame()
+        card.setObjectName("card")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(20, 18, 20, 20)
+        layout.setSpacing(14)
+        layout.addWidget(self._label(title, "cardTitle", wrap=False))
+        return card, layout
+
+    def _field(self, caption: str, widget: QWidget, hint: str = "") -> QVBoxLayout:
+        box = QVBoxLayout()
+        box.setSpacing(6)
+        box.addWidget(self._label(caption, "fieldLabel", wrap=False))
+        box.addWidget(widget)
+        if hint:
+            box.addWidget(self._label(hint, "hint"))
+        return box
+
+    def _build_ui(self) -> None:
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setObjectName("connectionsScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        outer.addWidget(scroll)
+        content = QWidget()
+        content.setObjectName("connectionsContent")
+        scroll.setWidget(content)
+        page = QVBoxLayout(content)
+        page.setContentsMargins(38, 34, 38, 28)
+        column = QWidget()
+        column.setMaximumWidth(780)
+        column.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        page.addWidget(column, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        page.addStretch(1)
+        layout = QVBoxLayout(column)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(16)
+
+        layout.addWidget(self._label("BACKEND CONNECTIONS / STUDIO", "sectionCaption", wrap=False))
+        layout.addWidget(self._label("Backend connection", "pageHeading", wrap=False))
+        layout.addWidget(self._label(
+            "Connect to an existing Morphorum GPU backend. No local GPU needed.",
+            "pageDescription",
+        ))
+
+        # -- Backend card: which server, and the actions that act on it.
+        backend, box = self._card("Backend")
+        self.selector = QComboBox()
+        self.selector.currentIndexChanged.connect(self.select_profile)
+        self.new_button = self._fixed(QPushButton("New"), 72)
+        picker = QHBoxLayout()
+        picker.setSpacing(10)
+        picker.addLayout(self._field("Saved profile", self.selector), 1)
+        picker.addWidget(self.new_button, 0, Qt.AlignmentFlag.AlignBottom)
+        box.addLayout(picker)
+
+        self.name = QLineEdit()
+        self.name.setPlaceholderText("e.g. Workshop GPU")
+        self.url = QLineEdit()
+        self.url.setPlaceholderText("http://127.0.0.1:7866")
+        fields = QHBoxLayout()
+        fields.setSpacing(14)
+        fields.addLayout(self._field("Profile name", self.name), 2)
+        fields.addLayout(self._field("Backend URL", self.url), 3)
+        box.addLayout(fields)
+
+        self.save_button = self._fixed(QPushButton("Save profile"), 110)
+        self.remove_button = self._fixed(QPushButton("Remove"), 90)
+        self.remove_button.setObjectName("dangerAction")
+        self.disconnect_button = self._fixed(QPushButton("Disconnect"), 100)
+        self.test_button = self._fixed(QPushButton("Connect / Test"), 130)
+        self.test_button.setObjectName("primaryAction")
+        actions = QHBoxLayout()
+        actions.setSpacing(10)
+        actions.addWidget(self.remove_button)
+        actions.addStretch(1)
+        actions.addWidget(self.save_button)
+        actions.addWidget(self.disconnect_button)
+        actions.addWidget(self.test_button)
+        box.addLayout(actions)
+        layout.addWidget(backend)
+
+        # -- Credential card. Provisioning is local: reading/saving a token does not transmit it.
+        credential, cbox = self._card("Client credential")
+        self.credential_status = self._label("No token imported for this session.", "hint")
+        self.import_button = self._fixed(QPushButton("Import token file…"), 150)
+        self.import_button.setToolTip("Select a token file from this PC or a trusted mapped share")
+        status_row = QHBoxLayout()
+        status_row.setSpacing(12)
+        status_row.addWidget(self.credential_status, 1)
+        status_row.addWidget(self.import_button)
+        cbox.addLayout(status_row)
+
+        self.token = QLineEdit()
+        self.token.setEchoMode(QLineEdit.EchoMode.Password)
+        self.token.setPlaceholderText("Paste a token (optional)")
+        cbox.addLayout(self._field(
+            "Bearer token", self.token,
+            "Saved to the OS credential manager with the profile. Leave blank to keep the existing one.",
+        ))
+
+        self.trust_http = QCheckBox("Allow sending this credential over HTTP on my trusted LAN")
+        cbox.addWidget(self.trust_http)
+        cbox.addWidget(self._label(
+            "Only for a private network you control. HTTP does not encrypt the token.", "hint"))
+
+        self.help_toggle = QToolButton()
+        self.help_toggle.setObjectName("linkButton")
+        self.help_toggle.setCheckable(True)
+        self.help_toggle.setText("▸  How do I get a token?")
+        self.help_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        cbox.addWidget(self.help_toggle, 0, Qt.AlignmentFlag.AlignLeft)
+        self.help_panel = QWidget()
+        hbox = QVBoxLayout(self.help_panel)
+        hbox.setContentsMargins(0, 0, 0, 0)
+        hbox.setSpacing(8)
+        hbox.addWidget(self._label(
+            "1. On the GPU host, issue a client token with the command below.\n"
+            "2. Transfer the token file securely or browse a trusted network share.\n"
+            "3. Import it, then choose Connect / Test.",
+            "hint",
+        ))
+        self.issue_command = QLineEdit(
+            '.\\.venv\\Scripts\\python.exe -m morphorum clients issue '
+            '"Morphorum Studio" --days 90 --out ".\\data\\studio-client.token"'
+        )
+        self.issue_command.setReadOnly(True)
+        self.issue_command.setCursorPosition(0)
+        self.issue_command.setToolTip("Run this in PowerShell inside the Morphorum backend checkout")
+        self.copy_button = self._fixed(QPushButton("Copy"), 72)
+        command_row = QHBoxLayout()
+        command_row.setSpacing(10)
+        command_row.addWidget(self.issue_command, 1)
+        command_row.addWidget(self.copy_button)
+        hbox.addLayout(command_row)
+        self.help_panel.setVisible(False)
+        cbox.addWidget(self.help_panel)
+        layout.addWidget(credential)
+
+        # -- Status
+        status, sbox = self._card("Status")
+        self.details = self._label("No backend connected.", "connectionDetails")
+        self.details.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        sbox.addWidget(self.details)
+        layout.addWidget(status)
+
+        self.help_toggle.toggled.connect(self._toggle_help)
+        self.copy_button.clicked.connect(self._copy_command)
+
+    def _toggle_help(self, shown: bool) -> None:
+        self.help_panel.setVisible(shown)
+        self.help_toggle.setText(("▾" if shown else "▸") + "  How do I get a token?")
+
+    def _copy_command(self) -> None:
+        QApplication.clipboard().setText(self.issue_command.text())
+        self.copy_button.setText("Copied")
+        QTimer.singleShot(1500, lambda: self.copy_button.setText("Copy"))
 
     def _url_edited(self, text):
         """HTTP trust belongs to one exact URL: editing the address withdraws it."""

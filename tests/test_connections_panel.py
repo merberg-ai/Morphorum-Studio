@@ -447,3 +447,54 @@ def test_panel_starts_with_a_warning_when_profile_file_is_corrupt(tmp_path):
     finally:
         panel.close()
         assert app is not None
+
+
+def _layout_panel(tmp_path):
+    from morphorum_studio.ui.theme import DARK_STYLESHEET
+
+    app = QApplication.instance() or QApplication([])
+    app.setStyleSheet(DARK_STYLESHEET)
+    panel = ConnectionsPanel(
+        profile_store=ProfileStore(tmp_path / "profiles.json"), credential_store=FakeVault()
+    )
+    panel.resize(1000, 760)
+    panel.show()
+    app.processEvents()
+    return app, panel
+
+
+def test_buttons_keep_their_natural_size_instead_of_stretching(tmp_path):
+    app, panel = _layout_panel(tmp_path)
+    try:
+        for button in (panel.import_button, panel.save_button, panel.test_button,
+                       panel.disconnect_button, panel.remove_button, panel.new_button):
+            assert button.width() <= button.sizeHint().width() + 40, button.text()
+        # Actions share one row, in order, without overlapping.
+        row = [panel.remove_button, panel.save_button, panel.disconnect_button, panel.test_button]
+        lefts = [b.mapTo(panel, b.rect().topLeft()).x() for b in row]
+        assert lefts == sorted(lefts)
+        for left, right in zip(row, row[1:]):
+            gap = right.mapTo(panel, right.rect().topLeft()).x() - (
+                left.mapTo(panel, left.rect().topLeft()).x() + left.width())
+            assert gap >= 8
+    finally:
+        panel.close()
+        app.setStyleSheet("")
+        assert app is not None
+
+
+def test_token_help_is_collapsed_until_asked_for_and_command_copies(tmp_path):
+    app, panel = _layout_panel(tmp_path)
+    try:
+        assert not panel.help_panel.isVisible()
+        panel.help_toggle.click()
+        assert panel.help_panel.isVisible()
+        panel.copy_button.click()
+        assert QApplication.clipboard().text() == panel.issue_command.text()
+        assert "morphorum clients issue" in panel.issue_command.text()
+        panel.help_toggle.click()
+        assert not panel.help_panel.isVisible()
+    finally:
+        panel.close()
+        app.setStyleSheet("")
+        assert app is not None

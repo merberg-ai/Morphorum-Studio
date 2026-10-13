@@ -35,9 +35,9 @@ class StudioPreferences:
 
     def restore_window(self, window) -> None:
         geometry = self.settings.value("window/geometry")
-        if geometry:
-            window.restoreGeometry(geometry)
         if self.enabled("restore_geometry", True):
+            if geometry:
+                window.restoreGeometry(geometry)
             # Qt may restore a window onto a disconnected monitor. Recenter if needed.
             screens = window.screen().virtualSiblings() if window.screen() else []
             center = window.frameGeometry().center()

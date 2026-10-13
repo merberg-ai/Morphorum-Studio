@@ -23,6 +23,8 @@ from morphorum_studio.ui.connections_panel import ConnectionsPanel
 from morphorum_studio.ui.dashboard_service import DashboardService
 from morphorum_studio.ui.home_page import HomePage
 from morphorum_studio.ui.preferences import StudioPreferences
+from morphorum_studio.ui.projects_page import ProjectsPage
+from morphorum_studio.ui.projects_service import ProjectsService
 from morphorum_studio.ui.shell import NavRail, TitleBar
 from morphorum_studio.ui.startup_settings import StartupSettingsPanel
 
@@ -158,6 +160,7 @@ class StudioMainWindow(QMainWindow):
 
         self.session = BackendSession(self)
         self.dashboard = DashboardService(self.session, self)
+        self.projects_service = ProjectsService(self.session, self)
         self.pages = QStackedWidget()
         self.pages.setObjectName("pages")
         for page_name, title, description in PAGES:
@@ -167,6 +170,14 @@ class StudioMainWindow(QMainWindow):
                     lambda: self.navigation.setCurrentRow(names.index("Connections"))
                 )
                 self.pages.addWidget(self.home_page)
+            elif page_name == "Projects":
+                self.projects_page = ProjectsPage(
+                    self.session, self.projects_service, self.preferences
+                )
+                self.projects_page.open_connections.connect(
+                    lambda: self.navigation.setCurrentRow(names.index("Connections"))
+                )
+                self.pages.addWidget(self.projects_page)
             elif page_name == "Connections":
                 self.connections_panel = ConnectionsPanel(
                     preferences=self.preferences, session=self.session
@@ -184,6 +195,9 @@ class StudioMainWindow(QMainWindow):
         self.navigation.currentRowChanged.connect(self._remember_workspace)
         self.navigation.currentRowChanged.connect(
             lambda row: self.dashboard.set_active(row == names.index("Home"))
+        )
+        self.navigation.currentRowChanged.connect(
+            lambda row: self.projects_page.set_active(row == names.index("Projects"))
         )
         self.connection_status.clicked.connect(
             lambda *_: self.navigation.setCurrentRow(names.index("Connections"))
@@ -271,12 +285,25 @@ class StudioMainWindow(QMainWindow):
             self.preferences.set_workspace(PAGES[index][0])
 
     def closeEvent(self, event):
+        if self.projects_page.has_unsaved_changes() and not self._confirm_discard():
+            event.ignore()
+            return
         if self.preferences.enabled("restore_geometry", True):
             self.preferences.save_window(self)
         self.preferences.sync()
         self.dashboard.set_active(False)
         self.connections_panel.disconnect()
         super().closeEvent(event)
+
+    def _confirm_discard(self) -> bool:
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Unsaved project changes")
+        box.setText("The open project has changes that have not been saved to the backend.")
+        discard = box.addButton("Discard and close", QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton("Keep editing", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        return box.clickedButton() is discard
 
     def _make_page(self, name: str, title: str, description: str) -> QWidget:
         page = QFrame()

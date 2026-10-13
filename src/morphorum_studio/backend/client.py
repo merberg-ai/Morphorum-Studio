@@ -110,8 +110,24 @@ def _encode_query(params: Mapping[str, str | int | None] | None) -> str:
     return "?" + urlencode(pairs) if pairs else ""
 
 
+_ETAG = re.compile(r'"[0-9a-f]{64}"')
+MAX_REQUEST_BYTES = 262_144
+
+
+def _error_detail(exc: HTTPError) -> str:
+    """The backend's short FastAPI ``detail`` string, if any. Control characters are removed."""
+    try:
+        body = json.loads(exc.read(4097))
+    except Exception:
+        return ""
+    detail = body.get("detail") if isinstance(body, dict) else None
+    if not isinstance(detail, str):
+        return ""
+    return re.sub(r"[\x00-\x1f\x7f]", " ", detail).strip()[:200]
+
+
 class BackendClient:
-    """GET-only native discovery client. Does not follow redirects or retry.
+    """Native client for the backend API. Does not follow redirects or retry.
 
     Requests ignore HTTP(S) proxy settings from the environment or the OS by default,
     so a bearer token is only ever sent to the backend host the profile names. Pass
@@ -134,13 +150,49 @@ class BackendClient:
 
     def get_json(self, path: str,
                  params: Mapping[str, str | int | None] | None = None) -> dict[str, Any]:
+        return self._request("GET", path, params)[0]
+
+    def get_json_etag(self, path: str,
+                      params: Mapping[str, str | int | None] | None = None
+                      ) -> tuple[dict[str, Any], str | None]:
+        """Like ``get_json`` but also returns the strong ETag header when the backend sends one."""
+        return self._request("GET", path, params)
+
+    def send_json(self, method: str, path: str, body: Mapping[str, Any] | None = None, *,
+                  if_match: str | None = None) -> tuple[dict[str, Any], str | None]:
+        """One explicit state-changing call (POST, PUT or DELETE). Never retried.
+
+        ``if_match`` (PUT only) must be a quoted 64-hex ETag from an earlier read. Error messages
+        include the backend's short ``detail`` text so the user learns why a change was refused.
+        """
+        if method not in ("POST", "PUT", "DELETE"):
+            raise ValueError("unsupported method")
+        if if_match is not None and (method != "PUT" or not _ETAG.fullmatch(if_match)):
+            raise ValueError("If-Match must be one quoted ETag on a PUT")
+        if body is not None and method == "DELETE":
+            raise ValueError("DELETE takes no body")
+        data = None
+        if body is not None:
+            data = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            if len(data) > MAX_REQUEST_BYTES:
+                raise ValueError("request body too large")
+        return self._request(method, path, None, data, if_match, include_detail=True)
+
+    def _request(self, method: str, path: str,
+                 params: Mapping[str, str | int | None] | None = None,
+                 data: bytes | None = None, if_match: str | None = None,
+                 include_detail: bool = False) -> tuple[dict[str, Any], str | None]:
         if not _API_PATH.fullmatch(path):
             raise ValueError("only fixed backend API paths are allowed")
         query = _encode_query(params)
         headers = {"Accept": "application/json", "User-Agent": "Morphorum-Studio/0.1"}
         if self._token:
             headers["Authorization"] = "Bearer " + self._token
-        request = Request(self.base_url + path + query, headers=headers, method="GET")
+        if data is not None:
+            headers["Content-Type"] = "application/json"
+        if if_match is not None:
+            headers["If-Match"] = if_match
+        request = Request(self.base_url + path + query, data=data, headers=headers, method=method)
         try:
             with self._opener.open(request, timeout=self.timeout) as response:
                 status = response.status
@@ -152,11 +204,16 @@ class BackendClient:
                 raw = response.read(1_048_577)
                 if len(raw) > 1_048_576:
                     raise BackendError("INVALID_RESPONSE", "Discovery response too large")
+                etag = response.headers.get("ETag")
         except HTTPError as exc:
             if 300 <= exc.code < 400:
                 raise BackendError("REDIRECT_REJECTED", "Backend redirected a discovery request", exc.code) from exc
-            raise BackendError(_ERROR_CODES.get(exc.code, "HTTP_ERROR"),
-                               f"Backend returned HTTP {exc.code}", exc.code) from exc
+            message = f"Backend returned HTTP {exc.code}"
+            if include_detail:
+                detail = _error_detail(exc)
+                if detail:
+                    message += f": {detail}"
+            raise BackendError(_ERROR_CODES.get(exc.code, "HTTP_ERROR"), message, exc.code) from exc
         except (URLError, socket.timeout, TimeoutError, ConnectionError, OSError) as exc:
             raise BackendError("NETWORK_ERROR", "Unable to reach backend") from exc
         try:
@@ -165,7 +222,9 @@ class BackendClient:
             raise BackendError("INVALID_RESPONSE", "Backend returned malformed JSON") from exc
         if not isinstance(payload, dict):
             raise BackendError("INVALID_RESPONSE", "Expected JSON object")
-        return payload
+        if etag is not None and not _ETAG.fullmatch(etag):
+            etag = None  # Weak or malformed validators are not usable for If-Match.
+        return payload, etag
 
     def discover(self) -> BackendDiscovery:
         health = self.get_json("/api/health")

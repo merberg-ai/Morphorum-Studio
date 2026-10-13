@@ -69,7 +69,7 @@ Incremental implementation order (stop for user review before GPU operations):
 
 **S2.1 exit:** Live metrics and model metadata are real, useful and resilient, with no local GPU dependencies. Console stream and more advanced diagnostic UI may wait for S3 where appropriate.
 
-**S2.2 Project Browser / revision-safe editing**
+**S2.2 Project Browser / revision-safe editing (IMPLEMENTED on feature/studio-s2-2-projects; awaiting CI + physical Windows test, see [S2_2_PROJECTS.md](S2_2_PROJECTS.md))**
 - List/search/create/open/trash project, project metadata, recent renders.
 - GET full normalized project with strong ETag; edits use conditional `PUT If-Match`.
 - Explicit 412 conflict UI: reload/compare/cancel, never silent overwrite.

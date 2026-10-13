@@ -35,9 +35,19 @@ class StudioSplash(QSplashScreen):
         painter.drawLine(44, 344, 516, 344)
         painter.end()
         super().__init__(image)
+        self._background = image
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
 
-    def stage(self, label: str) -> None:
+    def stage(self, label: str, step: int = 1, total: int = 3) -> None:
+        canvas = self._background.copy()
+        painter = QPainter(canvas)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#263246"))
+        painter.drawRoundedRect(44, 359, 472, 6, 3, 3)
+        painter.setBrush(QColor("#68c8ff"))
+        painter.drawRoundedRect(44, 359, round(472 * min(max(step, 0), total) / total), 6, 3, 3)
+        painter.end()
+        self.setPixmap(canvas)
         self.showMessage(
             label, Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
             QColor("#bbdef7")

@@ -14,6 +14,7 @@ from morphorum_studio.backend.client import normalize_base_url
 from morphorum_studio.backend.credentials import CredentialStore
 from morphorum_studio.backend.profiles import ConnectionProfile, ProfileStore
 from morphorum_studio.backend.worker import DiscoveryWorker
+from morphorum_studio.ui.preferences import StudioPreferences
 
 
 class ConnectionsPanel(QWidget):
@@ -21,10 +22,11 @@ class ConnectionsPanel(QWidget):
     profile_selected = Signal(str)
     connection_succeeded = Signal(str)
 
-    def __init__(self, parent=None, profile_store=None, credential_store=None):
+    def __init__(self, parent=None, profile_store=None, credential_store=None, preferences=None):
         super().__init__(parent)
         self.store = profile_store or ProfileStore()
         self.vault = credential_store or CredentialStore()
+        self.preferences = preferences or StudioPreferences()
         self.profiles = self.store.load()
         self._busy = False
         self._worker = None
@@ -128,7 +130,7 @@ class ConnectionsPanel(QWidget):
         self.name.setText(p.name if p else "")
         self.url.setText(p.url if p else "")
         self.token.clear()
-        self.trust_http.setChecked(False)
+        self.trust_http.setChecked(bool(p and self.preferences.trusted_http(p.id, p.url)))
         try:
             has_token = bool(p and self.vault.get(p.id))
         except RuntimeError:
@@ -173,6 +175,8 @@ class ConnectionsPanel(QWidget):
             if self.token.text():
                 self.vault.set(p.id, self.token.text())
             self.store.save(self.profiles)
+            self.preferences.set_trusted_http(p.id, p.url, self.trust_http.isChecked())
+            self.preferences.sync()
             self.refresh(p.id)
             self.details.setText("Profile saved. Choose Connect / Test.")
             self.status_changed.emit("BACKEND OFFLINE")
@@ -220,6 +224,7 @@ class ConnectionsPanel(QWidget):
             return
         try:
             self.vault.delete(p.id)
+            self.preferences.set_trusted_http(p.id, p.url, False)
             self.profiles.remove(p)
             self.store.save(self.profiles)
             self.refresh()
@@ -227,7 +232,7 @@ class ConnectionsPanel(QWidget):
         except (RuntimeError, OSError) as exc:
             QMessageBox.warning(self, "Remove failed", str(exc))
 
-    def connect_profile(self):
+    def connect_profile(self, *, automatic=False):
         if self._busy:
             return
         p = self.selected()
@@ -238,6 +243,10 @@ class ConnectionsPanel(QWidget):
             token = self.vault.get(p.id)
         except RuntimeError as exc:
             QMessageBox.warning(self, "Credential store", str(exc))
+            return
+        if token and urlsplit(p.url).scheme == "http" and not self.preferences.trusted_http(p.id, p.url) and automatic:
+            self.details.setText("Auto-connect paused: approve trusted HTTP in Connections and save the profile.")
+            self.status_changed.emit("BACKEND OFFLINE")
             return
         if token and urlsplit(p.url).scheme == "http" and not self.trust_http.isChecked():
             answer = QMessageBox.warning(
@@ -251,6 +260,14 @@ class ConnectionsPanel(QWidget):
                 return
             self.trust_http.setChecked(True)
         self._probe(p, token, monitoring=False)
+
+    def auto_connect(self, profile_id: str) -> bool:
+        if not profile_id or not self.select_by_id(profile_id):
+            return False
+        if self._busy:
+            return False
+        self.connect_profile(automatic=True)
+        return True
 
     def _probe(self, profile, token, *, monitoring):
         self._busy = True

@@ -191,3 +191,6 @@ See docs/S3_2_ANIMATION.md. Stacked on feature/studio-s3-1-image-lab. Render car
 
 ## S3.3 video exports (branch feature/studio-s3-3-video)
 See docs/S3_3_VIDEO.md. Stacked on feature/studio-s3-2-animation. Export section in the Render card: backend FFmpeg discovery, journalled idempotent export, REST polling, audio stated only from the export record, SHA-256-verified save, cached verified playback. CI green and physical Windows test passed. Nothing merged.
+
+## S4.1 timeline viewer (branch feature/studio-s4-1-timeline)
+See docs/S4_1_TIMELINE.md. From dev-ui (S1-S3.3 + console merged). Read-only Editor page: lanes, scrubbing, backend-resolved values and curves. Awaiting CI and a physical Windows test. Nothing merged beyond dev-ui.

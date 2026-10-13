@@ -33,6 +33,8 @@ from morphorum_studio.ui.projects_page import ProjectsPage
 from morphorum_studio.ui.render_service import RenderService
 from morphorum_studio.ui.video_service import VideoService
 from morphorum_studio.ui.console_service import ConsoleService
+from morphorum_studio.ui.editor_page import EditorPage
+from morphorum_studio.ui.timeline_service import TimelineService
 from morphorum_studio.ui.console_page import ConsolePage
 from morphorum_studio.ui.projects_service import ProjectsService
 from morphorum_studio.ui.shell import NavRail, TitleBar
@@ -183,6 +185,7 @@ class StudioMainWindow(QMainWindow):
             Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.CacheLocation))
             / "video-playback", self)
         self.console_service = ConsoleService(self.session, self)
+        self.timeline_service = TimelineService(self.session, self)
         self.pages = QStackedWidget()
         self.pages.setObjectName("pages")
         for page_name, title, description in PAGES:
@@ -207,6 +210,9 @@ class StudioMainWindow(QMainWindow):
                     lambda: self.navigation.setCurrentRow(names.index("Connections"))
                 )
                 self.pages.addWidget(self.image_lab_page)
+            elif page_name == "Editor":
+                self.editor_page = EditorPage(self.session, self.projects_service, self.timeline_service)
+                self.pages.addWidget(self.editor_page)
             elif page_name == "Console":
                 self.console_page = ConsolePage(self.session, self.console_service)
                 self.pages.addWidget(self.console_page)
@@ -233,6 +239,9 @@ class StudioMainWindow(QMainWindow):
         )
         self.navigation.currentRowChanged.connect(
             lambda row: self.image_lab_page.set_active(row == names.index("Image Lab"))
+        )
+        self.navigation.currentRowChanged.connect(
+            lambda row: self.editor_page.set_active(row == names.index("Editor"))
         )
         self.connection_status.clicked.connect(
             lambda *_: self.navigation.setCurrentRow(names.index("Connections"))

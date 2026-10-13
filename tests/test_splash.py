@@ -15,7 +15,9 @@ def test_splash_stages_without_network():
         for stage in (1, 2, 3):
             splash.stage("Startup stage", stage)
             assert not splash.pixmap().isNull()
-        assert splash_logo_path().name == "morphorum-studio-logo.png"
+        assert splash_logo_path().name == "splash-logo.jpg"
+        assert splash_logo_path().is_file()
+        assert splash_logo_path().read_bytes().startswith(bytes.fromhex("ffd8ff"))
     finally:
         splash.close()
         assert app is not None

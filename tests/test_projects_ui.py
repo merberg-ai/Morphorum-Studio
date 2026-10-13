@@ -326,9 +326,10 @@ def test_conflict_keeps_edits_and_can_reload(tmp_path, monkeypatch):
     store.projects["alpha"]["rev"] += 1  # someone else saved
     store.projects["alpha"]["name"] = "theirs"
     shown = []
-    monkeypatch.setattr(page, "_conflict", lambda: shown.append(1))
+    monkeypatch.setattr(page, "_conflict", lambda theirs=None: shown.append(theirs))
     page.save_button.click()
-    assert shown == [1] and page.name_edit.text() == "mine"
+    assert len(shown) == 1 and shown[0].name == "theirs"  # compared against the backend's version
+    assert page.name_edit.text() == "mine" and page._etag == etag(1)  # the form was not touched
     page._service.open("alpha")
     assert page.name_edit.text() == "theirs"
 
@@ -616,3 +617,42 @@ def test_format_bytes():
     from morphorum_studio.ui.assets_card import format_bytes
     assert format_bytes(None) == "—" and format_bytes(512) == "512 B"
     assert format_bytes(1536) == "1.5 KiB" and format_bytes(5 * 1024**2) == "5.0 MiB"
+
+
+def test_conflict_dialog_lists_differences_and_copies(tmp_path, monkeypatch):
+    from morphorum_studio.backend.projects import ProjectDetail
+    store, session, service, prefs, page = make(tmp_path)
+    page.set_active(True)
+    page._select("alpha")
+    page.name_edit.setText("Mine")
+    page.notes_edit.setPlainText("my notes")
+    seen = {}
+
+    def fake_exec(box):
+        seen["text"] = box.informativeText()
+        copy = next(b for b in box.buttons() if b.text().startswith("Copy my edits"))
+        box.setProperty("pick", copy)
+        seen["box"] = box
+
+    monkeypatch.setattr(QMessageBox, "exec", fake_exec)
+    monkeypatch.setattr(QMessageBox, "clickedButton", lambda box: box.property("pick"))
+    page._conflict(ProjectDetail(id="alpha", name="Theirs", notes="their notes"))
+    assert "Mine" in seen["text"] and "Theirs" in seen["text"] and "their notes" in seen["text"]
+    assert QApplication.clipboard().text() == "Mine\n\nmy notes"
+
+
+def test_excerpt():
+    assert ProjectsPage._excerpt("") == "(empty)"
+    assert ProjectsPage._excerpt("a  b\nc") == "a b c"
+    assert ProjectsPage._excerpt("x" * 500).endswith("…")
+
+
+def test_peek_is_dropped_after_disconnect(tmp_path):
+    runner = Deferred()
+    store, session, service, *_ = make(tmp_path, runner=runner, with_page=False)
+    got = []
+    service.peeked.connect(lambda i, d: got.append((i, d)))
+    service.peek("alpha")
+    session.disconnected()
+    runner.complete()
+    assert got == []

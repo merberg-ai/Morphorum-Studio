@@ -21,8 +21,8 @@ Stacked on `feature/studio-s2-1-dashboard`. Nothing merged. Needs CI plus a phys
 - Results from an older connection or an older selection are discarded.
 
 ## Not in S2.2
-Editing animation, prompts, camera or model fields (S4/S5), project assets (S2.3), a side-by-side
-conflict compare, and any rendering.
+Editing animation, prompts, camera or model fields (S4/S5), project assets (S2.3), a full side-by-side
+conflict diff (the conflict dialog lists the differing name/notes and can copy your edits), and any rendering.
 
 ## Windows acceptance checklist
 1. Projects page, disconnected: explains it, **Open Connections** works.
@@ -32,3 +32,6 @@ conflict compare, and any rendering.
 5. Two clients: change the project elsewhere, then Save here: conflict dialog, edits kept, Reload works.
 6. New project: appears selected. Move to Trash: it disappears; trashing while rendering shows the reason.
 7. Stop the backend mid-edit: form kept, controls disabled; restart: Save works again.
+
+## Conflict dialog (refinement)
+On a 412 Studio reads the backend's current version without touching the form and lists how the name and notes differ. Buttons: *Reload from backend*, *Copy my edits, keep editing* (puts name and notes on the clipboard), *Keep editing*.

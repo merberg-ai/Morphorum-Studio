@@ -28,6 +28,7 @@ class ProjectsService(QObject):
     asset_changed = Signal(str, str, object)  # operation, project id, Soundtrack | None
     copy_saved = Signal(str)  # final path
     busy_changed = Signal(bool)
+    peeked = Signal(str, object)  # project id, ProjectDetail | None (conflict comparison)
     cleared = Signal()
 
     def __init__(self, session: BackendSession, parent: QObject | None = None,
@@ -40,6 +41,7 @@ class ProjectsService(QObject):
         self._open_seq = 0
         self._mutating = False
         self._assets_seq = 0
+        self._peek_seq = 0
         self._preview_seq = 0
         self._copying = False
         session.changed.connect(self._session_changed)
@@ -69,6 +71,7 @@ class ProjectsService(QObject):
             self._open_seq += 1
             self._assets_seq += 1
             self._preview_seq += 1
+            self._peek_seq += 1
             self._copying = False
             if self._mutating:
                 self._mutating = False
@@ -124,6 +127,22 @@ class ProjectsService(QObject):
         else:
             detail, etag, renders = result
             self.opened.emit(detail, etag, renders)
+
+    def peek(self, project_id: str) -> None:
+        """Read the backend's current version without touching the open form (conflict compare)."""
+        client = self._client()
+        if client is None:
+            self.peeked.emit(project_id, None)
+            return
+        self._peek_seq += 1
+        seq, epoch = self._peek_seq, self._session.epoch
+
+        def done(result, error):
+            if self._stale(epoch) or seq != self._peek_seq:
+                return
+            self.peeked.emit(project_id, None if error else result[0])
+
+        self._run(client, lambda c: ProjectsApi(c).open(project_id), done)
 
     # -- writes (one at a time, never retried) -------------------------------------------
 

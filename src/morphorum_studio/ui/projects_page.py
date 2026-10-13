@@ -12,6 +12,7 @@ from datetime import datetime
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QFrame,
     QGridLayout,
@@ -101,6 +102,7 @@ class ProjectsPage(QFrame):
         self._selected: str | None = None  # id of the project shown on the right
         self._loaded: ProjectDetail | None = None
         self._etag: str | None = None
+        self._conflict_for: str | None = None
         self._restore_pending = True  # Reopen the last project once per connection.
         self._build()
         session.changed.connect(self._session_changed)
@@ -111,6 +113,7 @@ class ProjectsPage(QFrame):
         service.saved.connect(self._saved)
         service.trashed.connect(self._trashed)
         service.failed.connect(self._failed)
+        service.peeked.connect(self._peeked)
         service.busy_changed.connect(lambda _busy: self._update_buttons())
         self._session_changed()
 
@@ -593,7 +596,11 @@ class ProjectsPage(QFrame):
         elif operation == "assets":
             self.dirty_label.setText(f"Could not load project media ({code}).")
         elif operation == "save" and code == "PRECONDITION_FAILED":
-            self._conflict()
+            self._conflict_for = self._selected
+            if self._selected:
+                self._service.peek(self._selected)
+            else:
+                self._conflict(None)
         else:
             extra = ""
             if operation == "create" and code in ("NETWORK_ERROR", "CONNECTION_ERROR"):
@@ -610,16 +617,42 @@ class ProjectsPage(QFrame):
             QMessageBox.warning(self, titles.get(operation, "Request failed"), message + extra)
         self._update_buttons()
 
-    def _conflict(self) -> None:
+    def _peeked(self, project_id: str, detail) -> None:
+        if project_id != self._conflict_for or project_id != self._selected:
+            return
+        self._conflict_for = None
+        self._conflict(detail)
+
+    @staticmethod
+    def _excerpt(text: str, limit: int = 160) -> str:
+        text = " ".join(text.split())
+        if not text:
+            return "(empty)"
+        return text if len(text) <= limit else text[:limit] + "…"
+
+    def _conflict(self, theirs: ProjectDetail | None = None) -> None:
+        mine_name, mine_notes = self.name_edit.text().strip(), self.notes_edit.toPlainText()
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Warning)
         box.setWindowTitle("Project changed on the backend")
         box.setText("Another client saved this project after you opened it, so your changes were not saved.")
+        lines = []
+        if theirs is not None:
+            if theirs.name != mine_name:
+                lines.append(f"Name — yours: {self._excerpt(mine_name)}\n         backend: {self._excerpt(theirs.name)}")
+            if theirs.notes != mine_notes:
+                lines.append(f"Notes — yours: {self._excerpt(mine_notes)}\n          backend: {self._excerpt(theirs.notes)}")
+            if not lines:
+                lines.append("The backend's name and notes now match yours; something else in the project changed.")
         box.setInformativeText(
-            "Your edits are still in the form. Reload to see the backend's version "
-            "(your edits will be discarded), or keep editing and copy your text somewhere first.")
+            "Your edits are still in the form.\n\n" + ("\n\n".join(lines) + "\n\n" if lines else "")
+            + "Reload to take the backend's version (your edits are discarded), or keep editing.")
         reload_button = box.addButton("Reload from backend", QMessageBox.ButtonRole.DestructiveRole)
+        copy_button = box.addButton("Copy my edits, keep editing", QMessageBox.ButtonRole.AcceptRole)
         box.addButton("Keep editing", QMessageBox.ButtonRole.RejectRole)
         box.exec()
-        if box.clickedButton() is reload_button and self._selected:
+        clicked = box.clickedButton()
+        if clicked is copy_button:
+            QApplication.clipboard().setText(f"{mine_name}\n\n{mine_notes}")
+        elif clicked is reload_button and self._selected:
             self._service.open(self._selected)

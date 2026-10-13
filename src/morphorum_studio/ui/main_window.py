@@ -1,14 +1,15 @@
-"""S0 native UI shell: navigable and intentionally offline."""
+"""Studio main window: frameless shell with title bar, icon rail, pages and status bar."""
 
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QListWidget,
     QMainWindow,
+    QMessageBox,
     QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
@@ -16,8 +17,10 @@ from PySide6.QtWidgets import (
 )
 
 from morphorum_studio import __version__
+from morphorum_studio.ui import frameless
 from morphorum_studio.ui.connections_panel import ConnectionsPanel
 from morphorum_studio.ui.preferences import StudioPreferences
+from morphorum_studio.ui.shell import NavRail, TitleBar
 from morphorum_studio.ui.startup_settings import StartupSettingsPanel
 
 
@@ -25,8 +28,9 @@ PAGES: tuple[tuple[str, str, str], ...] = (
     (
         "Home",
         "Welcome to Morphorum Studio",
-        "This is the S0 native desktop shell. Connect to a Morphorum GPU backend in S1. "
-        "Model loading and media rendering stay on the backend, not this computer.",
+        "Connect to a Morphorum GPU backend from Connections. Model loading and "
+        "media rendering stay on the backend, not this computer. The live dashboard "
+        "arrives in S2.1.",
     ),
     (
         "Connections",
@@ -87,71 +91,87 @@ def _label(text: str, object_name: str | None = None) -> QLabel:
     return widget
 
 
+
+# Rail icon and short label per workspace (full names appear as tooltips).
+NAV_META: dict[str, tuple[str, str]] = {
+    "Home": ("home", "Home"),
+    "Connections": ("plug", "Connect"),
+    "Projects": ("library", "Projects"),
+    "Image Lab": ("sparkle", "Image"),
+    "Editor": ("timeline", "Editor"),
+    "Motion Lab": ("graph", "Motion"),
+    "Render Queue": ("queue", "Queue"),
+    "Console": ("console", "Console"),
+    "Settings": ("settings", "Settings"),
+}
+
+def _label(text: str, object_name: str | None = None) -> QLabel:
+    widget = QLabel(text)
+    widget.setWordWrap(True)
+    if object_name:
+        widget.setObjectName(object_name)
+    return widget
+
+
 class StudioMainWindow(QMainWindow):
-    """Responsive-enough desktop-first S0 shell; all navigation works offline."""
+    """Frameless desktop shell; all navigation works offline."""
 
     def __init__(self, preferences: StudioPreferences | None = None) -> None:
         super().__init__()
         self.preferences = preferences or StudioPreferences()
         self.setWindowTitle(f"Morphorum Studio | {__version__}")
+        self.setWindowFlags(
+            Qt.WindowType.Window
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowMinMaxButtonsHint
+        )
         self.resize(1200, 760)
         self.setMinimumSize(880, 560)
         self.setObjectName("mainWindow")
 
-        central = QWidget()
-        self.setCentralWidget(central)
-        outer = QVBoxLayout(central)
-        outer.setContentsMargins(0, 0, 0, 0)
+        shell = QWidget()
+        shell.setObjectName("shell")
+        shell.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setCentralWidget(shell)
+        outer = QVBoxLayout(shell)
+        outer.setContentsMargins(1, 1, 1, 1)
         outer.setSpacing(0)
 
-        top = QFrame()
-        top.setObjectName("topBar")
-        top_layout = QHBoxLayout(top)
-        top_layout.setContentsMargins(26, 16, 26, 16)
-        brand = _label("MORPHORUM  /  STUDIO", "brandName")
-        top_layout.addWidget(brand)
-        top_layout.addStretch()
-        self.connection_status = _label("BACKEND OFFLINE", "connectionStatus")
-        top_layout.addWidget(self.connection_status)
-        outer.addWidget(top)
+        self.title_bar = TitleBar(self)
+        self.connection_status = self.title_bar.connection_pill
+        outer.addWidget(self.title_bar)
 
-        workspace = QWidget()
-        workspace_layout = QHBoxLayout(workspace)
-        workspace_layout.setContentsMargins(12, 12, 12, 12)
-        workspace_layout.setSpacing(12)
+        body = QWidget()
+        body_layout = QHBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(0)
 
-        sidebar = QFrame()
-        sidebar.setObjectName("sidebar")
-        sidebar.setMinimumWidth(190)
-        sidebar.setMaximumWidth(245)
-        sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(12, 18, 12, 16)
-        sidebar_layout.setSpacing(12)
-        sidebar_layout.addWidget(_label("WORKSPACES", "sidebarCaption"))
-
-        self.navigation = QListWidget()
-        self.navigation.setObjectName("navigation")
-        self.navigation.addItems([item[0] for item in PAGES])
-        self.navigation.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        sidebar_layout.addWidget(self.navigation, 1)
-        sidebar_layout.addWidget(_label(f"PRE-ALPHA  {__version__}", "sidebarCaption"))
-        workspace_layout.addWidget(sidebar)
+        names = [entry[0] for entry in PAGES]
+        self.navigation = NavRail(
+            [(name, NAV_META[name][1], NAV_META[name][0]) for name in names],
+            footer_from=names.index("Settings"),
+        )
+        body_layout.addWidget(self.navigation)
 
         self.pages = QStackedWidget()
         self.pages.setObjectName("pages")
         for page_name, title, description in PAGES:
             if page_name == "Connections":
                 self.connections_panel = ConnectionsPanel(preferences=self.preferences)
-                self.connections_panel.status_changed.connect(self.connection_status.setText)
+                self.connections_panel.status_changed.connect(self._on_connection_status)
                 self.pages.addWidget(self.connections_panel)
             elif page_name == "Settings":
                 self.pages.addWidget(StartupSettingsPanel(self.preferences))
             else:
                 self.pages.addWidget(self._make_page(page_name, title, description))
-        workspace_layout.addWidget(self.pages, 1)
+        body_layout.addWidget(self.pages, 1)
+        outer.addWidget(body, 1)
 
         self.navigation.currentRowChanged.connect(self.pages.setCurrentIndex)
         self.navigation.currentRowChanged.connect(self._remember_workspace)
+        self.connection_status.clicked.connect(
+            lambda *_: self.navigation.setCurrentRow(names.index("Connections"))
+        )
         selected_id = self.preferences.profile("last_selected")
         if selected_id:
             self.connections_panel.select_by_id(selected_id)
@@ -164,21 +184,66 @@ class StudioMainWindow(QMainWindow):
         start_page = self.preferences.workspace() if self.preferences.enabled(
             "restore_workspace", True
         ) else "Home"
-        names = [entry[0] for entry in PAGES]
         self.navigation.setCurrentRow(names.index(start_page) if start_page in names else 0)
-        outer.addWidget(workspace, 1)
 
         footer = QFrame()
         footer.setObjectName("footer")
         footer_layout = QHBoxLayout(footer)
-        footer_layout.setContentsMargins(24, 9, 24, 9)
-        footer_layout.addWidget(_label("Studio S1.2  •  Native remote connection manager", "footerText"))
+        footer_layout.setContentsMargins(14, 5, 14, 5)
+        footer_layout.setSpacing(18)
+        footer_layout.addWidget(_label(f"Studio {__version__}", "footerText"))
+        footer_layout.addWidget(_label("Native remote connection manager", "footerText"))
         footer_layout.addStretch()
-        footer_layout.addWidget(_label("No GPU or model downloads required", "footerText"))
+        self.footer_status = _label("BACKEND OFFLINE", "footerText")
+        footer_layout.addWidget(self.footer_status)
         outer.addWidget(footer)
+
+        self._build_menus(names)
+        self.title_bar.sync_window_state()
+        frameless.enable_mouse_tracking(self)
+        self._edge_resizer = frameless.EdgeResizer(self)
         self.preferences.restore_window(self)
         if self.preferences.enabled("auto_connect", False):
             QTimer.singleShot(0, self._startup_connect)
+
+    def _build_menus(self, names: list[str]) -> None:
+        quit_action = QAction("Quit Morphorum Studio", self)
+        quit_action.setShortcut(QKeySequence("Ctrl+Q"))
+        quit_action.triggered.connect(self.close)
+        self.addAction(quit_action)
+        self.title_bar.add_menu("File", [quit_action])
+
+        view_actions: list[QAction | None] = []
+        for index, name in enumerate(names):
+            action = QAction(name, self)
+            if index < 9:
+                action.setShortcut(QKeySequence(f"Ctrl+{index + 1}"))
+            action.triggered.connect(lambda _checked=False, row=index: self.navigation.setCurrentRow(row))
+            self.addAction(action)
+            view_actions.append(action)
+        self.title_bar.add_menu("View", view_actions)
+
+        about = QAction("About Morphorum Studio", self)
+        about.triggered.connect(self._show_about)
+        self.title_bar.add_menu("Help", [about])
+
+    def _show_about(self) -> None:
+        QMessageBox.about(
+            self,
+            "About Morphorum Studio",
+            f"Morphorum Studio {__version__}\n\n"
+            "Native desktop client for Morphorum GPU backends.\n"
+            "Rendering and models run on the backend, not this computer.",
+        )
+
+    def _on_connection_status(self, text: str) -> None:
+        self.connection_status.set_status(text)
+        self.footer_status.setText(text)
+
+    def changeEvent(self, event) -> None:  # noqa: N802
+        super().changeEvent(event)
+        if hasattr(self, "title_bar"):
+            self.title_bar.sync_window_state()
 
     def _startup_connect(self):
         profile_id = self.preferences.profile("last_successful")

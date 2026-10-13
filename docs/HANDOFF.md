@@ -170,3 +170,6 @@ Later S2.2: version-safe project list/browser, GET revision ETag, conditional PU
 - Keep source, CI, docs and user physical test results synchronized; never conflate unit/CI PASS with physical Windows PASS.
 
 **At the end of this handoff:** no action is required while the user is paused. Source of truth for the next task is the user's new request plus live GitHub state, starting from dev-ui.
+
+## UI shell foundation (branch feature/studio-ui-shell)
+See docs/UI_SHELL.md. Stacked on feature/studio-s1-hardening; neither is merged. Awaiting CI and a physical Windows test.

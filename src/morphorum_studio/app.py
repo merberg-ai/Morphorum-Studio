@@ -24,7 +24,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     # commands usable on machines without a display server.
     from PySide6.QtWidgets import QApplication
 
+    from PySide6.QtGui import QIcon
+
+    from .ui.fonts import load_bundled_fonts
     from .ui.main_window import StudioMainWindow
+    from .ui.shell import asset_path
     from .ui.theme import DARK_STYLESHEET
 
     app = QApplication.instance()
@@ -35,7 +39,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     app.setApplicationName("Morphorum Studio")
     app.setOrganizationName("Morphorum")
     app.setStyle("Fusion")
+    load_bundled_fonts()
     app.setStyleSheet(DARK_STYLESHEET)
+    icon_path = asset_path("app-icon.ico")
+    if icon_path.is_file():
+        app.setWindowIcon(QIcon(str(icon_path)))
     from .ui.preferences import StudioPreferences
     from .ui.splash import StudioSplash
 

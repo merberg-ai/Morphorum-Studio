@@ -27,7 +27,7 @@ where = ["src"]
 "" = "src"
 
 [tool.setuptools.package-data]
-morphorum_studio = ["assets/*.jpg"]
+morphorum_studio = ["assets/*.jpg", "assets/*.png", "assets/*.ico", "assets/fonts/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,0 +1,423 @@
+"""Design tokens and the Qt stylesheet generated from them.
+
+Every colour, radius and font used by the Studio shell lives here so that a
+second theme later is just another ``Tokens`` instance. QSS has no variables,
+so the stylesheet is a ``string.Template`` filled from the token fields.
+
+Notes on Qt stylesheet limits that shaped this file: QSS does not support
+``letter-spacing`` or CSS variables, ``rgba()`` alpha is 0-255 (not 0-1), and
+gradients must use ``qlineargradient``.
+"""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from string import Template
+
+
+@dataclass(frozen=True)
+class Tokens:
+    # Surfaces, darkest to lightest
+    void: str = "#04050a"
+    base: str = "#070912"
+    panel: str = "#0b0e1a"
+    raised: str = "#11152a"
+    hover: str = "#181d37"
+    # Hairlines (periwinkle at 13% / 26%)
+    line: str = "rgba(132, 152, 255, 33)"
+    line2: str = "rgba(132, 152, 255, 66)"
+    # Text
+    text: str = "#e8ecff"
+    dim: str = "#9aa3c9"
+    faint: str = "#646d96"
+    # Accent
+    cyan: str = "#38d8ff"
+    blue: str = "#4f7dff"
+    violet: str = "#9468ff"
+    grad_a: str = "#2fd3ff"
+    grad_b: str = "#5a7cff"
+    grad_c: str = "#9a6bff"
+    # Status
+    ok: str = "#3ddc97"
+    warn: str = "#f6b94c"
+    bad: str = "#ff5d73"
+    # Type
+    font_display: str = "Sora"
+    font_ui: str = "Geist"
+    font_mono: str = "Geist Mono"
+
+    def colors(self) -> dict[str, str]:
+        """Plain ``#rrggbb`` tokens (those QColor can parse directly)."""
+        return {k: v for k, v in asdict(self).items() if v.startswith("#")}
+
+
+DARK = Tokens()
+
+_QSS = Template(
+    """
+* {
+    font-family: "$font_ui", "Segoe UI Variable Text", "Segoe UI", "Arial", sans-serif;
+    font-size: 13px;
+}
+QWidget {
+    background: $base;
+    color: $text;
+}
+QLabel, QCheckBox, QRadioButton, QToolButton {
+    background: transparent;
+}
+QToolTip {
+    background: $raised;
+    color: $text;
+    border: 1px solid $line2;
+    padding: 4px 8px;
+}
+QMainWindow, QWidget#shell {
+    background: $base;
+}
+QWidget#shell {
+    border: 1px solid $line2;
+}
+
+/* ---------- title bar ---------- */
+QWidget#titleBar {
+    background: $void;
+    border-bottom: 1px solid $line;
+}
+QLabel#brandName {
+    font-family: "$font_display", "Segoe UI", sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: $text;
+}
+QLabel#brandSub {
+    font-family: "$font_display", "Segoe UI", sans-serif;
+    font-size: 10px;
+    font-weight: 500;
+    color: $faint;
+}
+QToolButton#menuButton {
+    padding: 5px 9px;
+    border-radius: 6px;
+    color: $dim;
+    border: none;
+}
+QToolButton#menuButton:hover, QToolButton#menuButton:pressed {
+    background: $raised;
+    color: $text;
+}
+QToolButton#menuButton::menu-indicator {
+    image: none;
+    width: 0px;
+}
+QToolButton#winButton, QToolButton#winClose {
+    border: none;
+    border-radius: 0px;
+    background: transparent;
+}
+QToolButton#winButton:hover {
+    background: $raised;
+}
+QToolButton#winClose:hover {
+    background: #c8344a;
+}
+QPushButton#connectionPill {
+    min-height: 0px;
+    padding: 3px 12px 3px 8px;
+    border-radius: 12px;
+    border: 1px solid $line2;
+    background: $panel;
+    color: $dim;
+    font-family: "$font_mono", "Consolas", monospace;
+    font-size: 11px;
+    font-weight: 500;
+}
+QPushButton#connectionPill:hover {
+    background: $raised;
+}
+QPushButton#connectionPill[state="connected"] {
+    background: rgba(61, 220, 151, 23);
+    border-color: rgba(61, 220, 151, 71);
+    color: #9ff0c9;
+}
+QPushButton#connectionPill[state="busy"] {
+    background: rgba(246, 185, 76, 23);
+    border-color: rgba(246, 185, 76, 71);
+    color: #ffd592;
+}
+QPushButton#connectionPill[state="error"] {
+    background: rgba(255, 93, 115, 23);
+    border-color: rgba(255, 93, 115, 71);
+    color: #ff9aaa;
+}
+
+/* ---------- menus ---------- */
+QMenu {
+    background: $panel;
+    border: 1px solid $line2;
+    border-radius: 8px;
+    padding: 5px;
+}
+QMenu::item {
+    padding: 6px 26px 6px 12px;
+    border-radius: 5px;
+    color: $text;
+}
+QMenu::item:selected {
+    background: $hover;
+}
+QMenu::separator {
+    height: 1px;
+    background: $line;
+    margin: 4px 6px;
+}
+
+/* ---------- icon rail ---------- */
+QFrame#rail {
+    background: $void;
+    border: none;
+    border-right: 1px solid $line;
+}
+QToolButton#railItem {
+    border: none;
+    border-radius: 10px;
+    color: $faint;
+    font-size: 10px;
+    padding: 6px 0px 4px 0px;
+}
+QToolButton#railItem:hover {
+    background: $panel;
+    color: $dim;
+}
+QToolButton#railItem:checked {
+    color: $text;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 rgba(79, 125, 255, 51), stop:1 rgba(148, 104, 255, 26));
+    border: 1px solid $line2;
+}
+QToolButton#railItem:focus {
+    border: 2px solid $cyan;
+}
+
+/* ---------- status bar ---------- */
+QFrame#footer {
+    background: $void;
+    border-top: 1px solid $line;
+}
+QLabel#footerText {
+    color: $faint;
+    font-family: "$font_mono", "Consolas", monospace;
+    font-size: 11px;
+}
+
+/* ---------- pages ---------- */
+QWidget#pages, QStackedWidget#pages {
+    background: $base;
+}
+QFrame#pageSurface {
+    background: $base;
+    border: none;
+}
+QLabel#pageHeading {
+    font-family: "$font_display", "Segoe UI", sans-serif;
+    color: $text;
+    font-size: 28px;
+    font-weight: 600;
+}
+QLabel#pageDescription, QLabel#panelDescription {
+    color: $dim;
+    font-size: 14px;
+}
+QLabel#sidebarCaption, QLabel#sectionCaption {
+    color: $faint;
+    font-size: 10px;
+    font-weight: 500;
+}
+QFrame#infoPanel, QGroupBox {
+    background: $panel;
+    border: 1px solid $line2;
+    border-radius: 14px;
+}
+QGroupBox {
+    font-size: 13px;
+    font-weight: 600;
+    margin-top: 15px;
+    padding: 18px 14px 12px 14px;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 14px;
+    padding: 0 7px;
+    color: $dim;
+    background: $base;
+}
+
+/* ---------- buttons ---------- */
+QPushButton {
+    background: $raised;
+    border: 1px solid $line2;
+    border-radius: 8px;
+    padding: 6px 14px;
+    min-height: 20px;
+    color: $text;
+    font-weight: 500;
+}
+QPushButton:hover {
+    background: $hover;
+}
+QPushButton:pressed {
+    background: $panel;
+    border-color: $violet;
+}
+QPushButton:focus {
+    border: 2px solid $cyan;
+}
+QPushButton:disabled {
+    background: $panel;
+    color: $faint;
+    border-color: $line;
+}
+QPushButton#primaryAction {
+    border: none;
+    color: #05060d;
+    font-weight: 600;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 $grad_a, stop:0.55 $grad_b, stop:1 $grad_c);
+}
+QPushButton#primaryAction:hover {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #6fe3ff, stop:0.55 #86a0ff, stop:1 #b595ff);
+}
+QPushButton#primaryAction:pressed {
+    background: $grad_b;
+}
+QPushButton#primaryAction:focus {
+    border: 2px solid #ffffff;
+}
+QPushButton#primaryAction:disabled {
+    background: $raised;
+    color: $faint;
+}
+QPushButton#dangerAction {
+    background: rgba(255, 93, 115, 31);
+    border: 1px solid rgba(255, 93, 115, 102);
+    color: #ff9aaa;
+}
+QPushButton#dangerAction:hover {
+    background: rgba(255, 93, 115, 56);
+}
+
+/* ---------- inputs ---------- */
+QLineEdit, QComboBox, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox {
+    background: $base;
+    border: 1px solid $line2;
+    border-radius: 8px;
+    padding: 6px 10px;
+    min-height: 20px;
+    selection-background-color: $blue;
+    selection-color: #ffffff;
+}
+QLineEdit:focus, QComboBox:focus, QTextEdit:focus,
+QPlainTextEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {
+    border: 1px solid $cyan;
+}
+QLineEdit:read-only {
+    color: $dim;
+    background: $panel;
+}
+QLineEdit:disabled, QComboBox:disabled {
+    color: $faint;
+    background: $panel;
+}
+QComboBox {
+    padding-right: 28px;
+}
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 26px;
+    border: none;
+    border-left: 1px solid $line;
+    border-top-right-radius: 8px;
+    border-bottom-right-radius: 8px;
+    background: $raised;
+}
+QComboBox QAbstractItemView {
+    background: $panel;
+    color: $text;
+    border: 1px solid $line2;
+    padding: 4px;
+    selection-background-color: $hover;
+    outline: none;
+}
+QCheckBox {
+    spacing: 9px;
+    color: $dim;
+}
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+    border-radius: 5px;
+    border: 1px solid $line2;
+    background: $base;
+}
+QCheckBox::indicator:hover {
+    border-color: $cyan;
+}
+QCheckBox::indicator:checked {
+    background: $blue;
+    border: 1px solid $cyan;
+}
+
+/* ---------- scrolling ---------- */
+QScrollBar:vertical {
+    background: transparent;
+    width: 10px;
+    margin: 3px;
+    border: none;
+}
+QScrollBar::handle:vertical {
+    background: $hover;
+    min-height: 26px;
+    border-radius: 4px;
+}
+QScrollBar::handle:vertical:hover {
+    background: $line2;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+QScrollBar:horizontal {
+    background: transparent;
+    height: 10px;
+    margin: 3px;
+    border: none;
+}
+QScrollBar::handle:horizontal {
+    background: $hover;
+    min-width: 26px;
+    border-radius: 4px;
+}
+QScrollBar::handle:horizontal:hover {
+    background: $line2;
+}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    width: 0px;
+}
+QListWidget, QListView, QTreeView, QTableView {
+    background: $panel;
+    border: 1px solid $line;
+    border-radius: 8px;
+    outline: none;
+}
+QListWidget::item:selected, QListView::item:selected {
+    background: $hover;
+    color: $text;
+}
+"""
+)
+
+
+def build_stylesheet(tokens: Tokens = DARK) -> str:
+    return _QSS.substitute(asdict(tokens))

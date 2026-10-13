@@ -28,6 +28,8 @@ def main():
         probe = (
             "from importlib.resources import files; "
             "from PySide6.QtGui import QPixmap; "
+            "from PySide6.QtWidgets import QApplication; "
+            "app=QApplication([]); "
             "p=files('morphorum_studio').joinpath('assets','splash-logo.jpg'); "
             "assert p.is_file(), p; "
             "assert p.read_bytes().startswith(bytes.fromhex('ffd8ff')); "

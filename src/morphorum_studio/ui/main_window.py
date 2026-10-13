@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -141,7 +141,7 @@ class StudioMainWindow(QMainWindow):
         self.pages.setObjectName("pages")
         for page_name, title, description in PAGES:
             if page_name == "Connections":
-                self.connections_panel = ConnectionsPanel()
+                self.connections_panel = ConnectionsPanel(preferences=self.preferences)
                 self.connections_panel.status_changed.connect(self.connection_status.setText)
                 self.pages.addWidget(self.connections_panel)
             elif page_name == "Settings":
@@ -177,6 +177,13 @@ class StudioMainWindow(QMainWindow):
         footer_layout.addWidget(_label("No GPU or model downloads required", "footerText"))
         outer.addWidget(footer)
         self.preferences.restore_window(self)
+        if self.preferences.enabled("auto_connect", False):
+            QTimer.singleShot(0, self._startup_connect)
+
+    def _startup_connect(self):
+        profile_id = self.preferences.profile("last_successful")
+        if profile_id:
+            self.connections_panel.auto_connect(profile_id)
 
     def _remember_workspace(self, index):
         if index >= 0:

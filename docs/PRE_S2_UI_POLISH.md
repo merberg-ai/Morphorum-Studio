@@ -18,14 +18,14 @@
 - [x] Native Settings toggles: splash, restore geometry, restore workspace, auto-connect (default off).
 
 ## P3: branded splash screen (after P2 acceptance)
-- [ ] Add user-provided Morphorum desktop logo in repository-approved reduced-resolution asset, without changing its artwork.
-- [ ] Splash with progress *stages* for actual startup work; never fabricate percentage or stall on network.
-- [ ] Main window shown as soon as GUI is ready; background auto-connect must not block splash dismissal.
-- [ ] Windows high-DPI/slow backend smoke tests.
+- [x] Add user-provided Morphorum desktop logo in repository-approved reduced-resolution asset, without changing its artwork.
+- [x] Splash with progress *stages* for actual startup work; never fabricate percentage or stall on network.
+- [x] Main window shown as soon as GUI is ready; background auto-connect must not block splash dismissal.
+- [ ] Windows high-DPI/slow backend smoke tests (beyond prior physical Windows splash acceptance).
 
 ## P4: optional startup reconnect (after P3 acceptance)
-- [ ] If opted in, connect last successful profile on launch using stored OS-keyring token.
-- [ ] Preserve HTTP LAN trust consent appropriately, avoid an unattended security bypass.
+- [x] If opted in, connect last successful profile on launch using stored OS-keyring token.
+- [x] Preserve HTTP LAN trust consent appropriately, avoid an unattended security bypass.
 - [ ] Fail safely on missing/revoked credentials or unfamiliar backend instance.
 - [ ] No GPU backend process startup/shutdown and no duplicate job POST.
 - [ ] Windows physical pass + exact-commit Ubuntu/Windows CI, then checkpoint.
@@ -52,3 +52,7 @@ Code committed on dev-ui: `ui/splash.py` implements a 560x430 QSplashScreen, wit
 ## P3 Windows physical acceptance (2026-10-12)
 
 **PASS by user report:** branded splash works as expected after manually placing the approved user logo at `assets/morphorum-studio-logo.png`. Both Windows and Ubuntu CI passed on code/docs commit `f16f65edfb0a5a3f546a110ab4c1cd68a5e5aae8`. The tested startup behavior is accepted, but the logo file itself is still **not committed** to the repository. A fresh clone without the manual asset shows text fallback; bundling and packaged-resource lookup remain a follow-up before shipping. Do not mark the logo packaging task complete or start S2.1 until final pre-S2 polish is finished.
+
+## Final pre-S2 code packaging checkpoint (2026-10-12)
+
+Optimized source artwork committed as `assets/morphorum-studio-logo.jpg` and included in Python wheel at `src/morphorum_studio/assets/splash-logo.jpg`. Splash uses `importlib.resources`, not an absolute/source-checkout-only assets path. `scripts/verify_clean_install.py` builds a wheel, installs in an isolated venv with OS dependencies exposed, verifies bundled JPEG signature and loads it through Qt. Both Windows and Ubuntu GitHub Actions **passed on exact commit `aa7e7988e30f4d332699a5f74eebd3a9fcec3022`** (35 tests plus wheel smoke check). Immutable code checkpoint `checkpoint/studio-pre-s2-polish-ci-verified-20261012` points to that SHA. Prior Windows user physical acceptance covers UI/control polish, persisted options, secure reconnect, and splash with manual supplied logo. Bundled reduced-size JPEG is CI-verified, but the user has not yet personally inspected the reduced artwork on Windows; do not claim an additional post-bundle physical test. Do not merge Studio or backend main until user explicitly authorizes.

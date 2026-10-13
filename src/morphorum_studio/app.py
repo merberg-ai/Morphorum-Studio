@@ -44,13 +44,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     if preferences.enabled("show_splash", True):
         splash = StudioSplash()
         splash.show()
-        splash.stage("Loading desktop preferences…")
+        splash.stage("Loading desktop preferences…", 1)
         app.processEvents()
-        splash.stage("Preparing native workspaces…")
+        splash.stage("Preparing native workspaces…", 2)
         app.processEvents()
     window = StudioMainWindow(preferences=preferences)
     if splash:
-        splash.stage("Restoring desktop session…")
+        splash.stage("Restoring desktop session…", 3)
         app.processEvents()
     window.show()
     if splash:

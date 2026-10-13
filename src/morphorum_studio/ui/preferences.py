@@ -23,6 +23,14 @@ class StudioPreferences:
     def set_profile(self, key: str, value: str) -> None:
         self.settings.setValue("connections/" + key, value)
 
+    def trusted_http(self, profile_id: str, url: str) -> bool:
+        return str(self.settings.value(
+            "http_consent/" + profile_id, ""
+        ) or "") == url
+
+    def set_trusted_http(self, profile_id: str, url: str, allowed: bool) -> None:
+        self.settings.setValue("http_consent/" + profile_id, url if allowed else "")
+
     def workspace(self) -> str:
         return str(self.settings.value("window/workspace", "Home") or "Home")
 

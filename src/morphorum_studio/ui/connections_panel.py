@@ -140,11 +140,8 @@ class ConnectionsPanel(QWidget):
         self.name.setPlaceholderText("e.g. Workshop GPU")
         self.url = QLineEdit()
         self.url.setPlaceholderText("http://127.0.0.1:7866")
-        fields = QHBoxLayout()
-        fields.setSpacing(14)
-        fields.addLayout(self._field("Profile name", self.name), 2)
-        fields.addLayout(self._field("Backend URL", self.url), 3)
-        box.addLayout(fields)
+        box.addLayout(self._field("Profile name", self.name))
+        box.addLayout(self._field("Backend URL", self.url))
 
         self.save_button = self._fixed(QPushButton("Save profile"), 110)
         self.remove_button = self._fixed(QPushButton("Remove"), 90)

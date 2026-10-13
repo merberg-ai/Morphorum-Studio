@@ -5,6 +5,9 @@ on:
     branches: [main, 'feature/**', 'dev-*']
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   shell:
     name: Python 3.12 / ${{ matrix.os }}

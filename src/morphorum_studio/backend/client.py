@@ -11,7 +11,9 @@ import socket
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlunsplit
-from urllib.request import HTTPRedirectHandler, HTTPSHandler, HTTPHandler, Request, build_opener
+from urllib.request import (
+    HTTPRedirectHandler, HTTPSHandler, HTTPHandler, ProxyHandler, Request, build_opener,
+)
 
 
 class BackendError(Exception):
@@ -59,7 +61,7 @@ def normalize_base_url(value: str) -> str:
     try:
         parts = urlsplit(raw)
         hostname = parts.hostname
-        port = parts.port
+        _ = parts.port  # Accessing the port validates it; ValueError if out of range.
     except ValueError as exc:
         raise BackendError("INVALID_URL", "Invalid backend URL or port") from exc
     if (parts.scheme not in ("http", "https") or not hostname or
@@ -67,16 +69,24 @@ def normalize_base_url(value: str) -> str:
             parts.query or parts.fragment or
             parts.path not in ("", "/") or any(c.isspace() for c in raw)):
         raise BackendError("INVALID_URL", "Use a root http(s) URL without credentials, path or query")
-    # Explicit port validation occurs through parts.port above.
-    _ = port
     return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), "", "", ""))
 
 
+# Fixed API paths only: /api/ followed by plain segments. Dot segments, percent-escapes,
+# query strings and fragments are all rejected.
+_API_PATH = re.compile(r"/api(?:/[A-Za-z0-9][A-Za-z0-9_.\-]*)+")
+
+
 class BackendClient:
-    """GET-only native discovery client. Does not follow redirects or retry."""
+    """GET-only native discovery client. Does not follow redirects or retry.
+
+    Requests ignore HTTP(S) proxy settings from the environment or the OS by default,
+    so a bearer token is only ever sent to the backend host the profile names. Pass
+    ``use_system_proxy=True`` to opt in for a backend that is only reachable via a proxy.
+    """
 
     def __init__(self, base_url: str, token: str | None = None,
-                 timeout: float = 8.0, opener: Any = None):
+                 timeout: float = 8.0, opener: Any = None, use_system_proxy: bool = False):
         self.base_url = normalize_base_url(base_url)
         if not 0 < timeout <= 60:
             raise ValueError("timeout must be in (0, 60] seconds")
@@ -85,11 +95,12 @@ class BackendClient:
         self._token = token
         self.timeout = timeout
         self._opener = opener if opener is not None else build_opener(
-            _NoRedirect, HTTPHandler, HTTPSHandler
+            ProxyHandler(None if use_system_proxy else {}),
+            _NoRedirect, HTTPHandler, HTTPSHandler,
         )
 
     def get_json(self, path: str) -> dict[str, Any]:
-        if not path.startswith("/api/") or "?" in path or "#" in path or "//" in path:
+        if not _API_PATH.fullmatch(path):
             raise ValueError("only fixed backend API paths are allowed")
         headers = {"Accept": "application/json", "User-Agent": "Morphorum-Studio/0.1"}
         if self._token:

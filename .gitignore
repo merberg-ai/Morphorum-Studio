@@ -19,6 +19,8 @@ htmlcov/
 Thumbs.db
 
 # Runtime (credentials and user data NEVER belong in git)
+*.token
+*.recovered-*
 .env
 .env.*
 !.env.example

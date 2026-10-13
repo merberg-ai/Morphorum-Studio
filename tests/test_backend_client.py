@@ -121,3 +121,65 @@ def test_invalid_content_type_and_oversized_payload():
         with pytest.raises(BackendError) as exc:
             BackendClient("http://localhost", opener=FakeOpener([response])).discover()
         assert exc.value.code == "INVALID_RESPONSE"
+
+
+def test_default_opener_ignores_system_proxies(monkeypatch):
+    from urllib.request import ProxyHandler
+    monkeypatch.setenv("http_proxy", "http://127.0.0.1:9")
+    monkeypatch.setenv("https_proxy", "http://127.0.0.1:9")
+    client = BackendClient("http://192.0.2.10:7866", "token")
+    handlers = [h for h in client._opener.handlers if isinstance(h, ProxyHandler)]
+    # An empty ProxyHandler registers nothing, so no proxy handler is active at all.
+    assert not [h for h in handlers if h.proxies]
+    opted_in = BackendClient("http://192.0.2.10:7866", "token", use_system_proxy=True)
+    handler = next(h for h in opted_in._opener.handlers if isinstance(h, ProxyHandler))
+    assert handler.proxies.get("http") == "http://127.0.0.1:9"
+
+
+def test_bearer_token_never_reaches_an_environment_proxy(monkeypatch):
+    """Regression: a configured proxy used to receive the Authorization header."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    seen = []
+
+    class Spy(BaseHTTPRequestHandler):
+        def do_GET(self):
+            seen.append(self.headers.get("Authorization"))
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Spy)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        monkeypatch.setenv("http_proxy", f"http://127.0.0.1:{server.server_address[1]}")
+        monkeypatch.delenv("no_proxy", raising=False)
+        monkeypatch.delenv("NO_PROXY", raising=False)
+        with pytest.raises(BackendError):
+            # 192.0.2.0/24 is reserved for documentation and is never routable.
+            BackendClient("http://192.0.2.10:7866", "SECRET-TEST-TOKEN", timeout=1).get_json("/api/health")
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert seen == []
+
+
+@pytest.mark.parametrize("path", [
+    "/api/../admin", "/api/%2e%2e/x", "/api/./x", "/api/health?x=1", "/api/a#b",
+    "/api//x", "/api", "/api/", "/other/api/x", "api/health", "/api/ok/", "/api/a b",
+])
+def test_get_json_rejects_unsafe_paths(path):
+    with pytest.raises(ValueError):
+        BackendClient("http://localhost", opener=FakeOpener([])).get_json(path)
+
+
+@pytest.mark.parametrize("path", [
+    "/api/health", "/api/system/gpu-memory", "/api/models/families", "/api/client/capabilities",
+])
+def test_get_json_accepts_plain_api_paths(path):
+    opener = FakeOpener([FakeResponse({"ok": True})])
+    assert BackendClient("http://localhost", opener=opener).get_json(path) == {"ok": True}

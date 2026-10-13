@@ -10,11 +10,18 @@ from PySide6.QtWidgets import (
     QMessageBox, QPushButton, QVBoxLayout, QWidget, QFileDialog, QGroupBox
 )
 
-from morphorum_studio.backend.client import normalize_base_url
+from morphorum_studio.backend.client import BackendError, normalize_base_url
 from morphorum_studio.backend.credentials import CredentialStore
 from morphorum_studio.backend.profiles import ConnectionProfile, ProfileStore
 from morphorum_studio.backend.worker import DiscoveryWorker
 from morphorum_studio.ui.preferences import StudioPreferences
+
+# While connected, these failures usually mean the backend is restarting or briefly
+# overloaded, so the monitor keeps retrying quietly. Anything else (rejected credentials,
+# incompatible API, wrong server) stops monitoring and asks the user to act.
+TRANSIENT_ERRORS = frozenset({
+    "NETWORK_ERROR", "CONNECTION_ERROR", "HTTP_ERROR", "RATE_LIMITED", "INVALID_RESPONSE",
+})
 
 
 class ConnectionsPanel(QWidget):
@@ -27,8 +34,12 @@ class ConnectionsPanel(QWidget):
         self.store = profile_store or ProfileStore()
         self.vault = credential_store or CredentialStore()
         self.preferences = preferences or StudioPreferences()
-        self.profiles = self.store.load()
-        self._busy = False
+        loaded = self.store.load_recovering()
+        self.profiles = loaded.profiles
+        self._load_warning = loaded.warning
+        self._connecting = False  # A user-started or startup connect is in flight.
+        self._monitor_inflight = False  # A background health probe is in flight.
+        self._restart_notice = False
         self._worker = None
         self._epoch = 0
         self._connected_profile = None
@@ -104,7 +115,30 @@ class ConnectionsPanel(QWidget):
         self.remove_button.clicked.connect(self.remove_profile)
         self.test_button.clicked.connect(self.connect_profile)
         self.disconnect_button.clicked.connect(self.disconnect)
+        self.url.textChanged.connect(self._url_edited)
         self.refresh()
+        if self._load_warning:
+            self.details.setText(self._load_warning)
+
+    def _url_edited(self, text):
+        """HTTP trust belongs to one exact URL: editing the address withdraws it."""
+        profile = self.selected()
+        saved = profile.url if profile else ""
+        try:
+            current = normalize_base_url(text)
+        except BackendError:
+            current = text.strip()
+        if current != saved and self.trust_http.isChecked():
+            self.trust_http.setChecked(False)
+
+    def _blocked(self) -> bool:
+        """True (with feedback) while a connection attempt is in progress."""
+        if self._connecting:
+            self.details.setText(
+                "A connection attempt is in progress. Wait for it, or press Disconnect to cancel."
+            )
+            return True
+        return False
 
     def refresh(self, selected=None):
         self.selector.blockSignals(True)
@@ -148,16 +182,16 @@ class ConnectionsPanel(QWidget):
         return False
 
     def new_profile(self):
-        if self._busy:
+        if self._blocked():
             return
         self.selector.setCurrentIndex(0)
         self.disconnect()
 
     def save_profile(self):
+        if self._blocked():
+            return
         if self._connected_profile is not None:
             self.disconnect()
-        if self._busy:
-            return
         try:
             url = normalize_base_url(self.url.text())
             name = self.name.text().strip()
@@ -185,7 +219,7 @@ class ConnectionsPanel(QWidget):
 
     def import_token_file(self):
         """Read a small host-issued secret locally, then store only in OS keyring."""
-        if self._busy:
+        if self._blocked():
             return
         p = self.selected()
         if p is None:
@@ -215,7 +249,7 @@ class ConnectionsPanel(QWidget):
         )
 
     def remove_profile(self):
-        if self._busy:
+        if self._blocked():
             return
         p = self.selected()
         if p is None:
@@ -233,7 +267,7 @@ class ConnectionsPanel(QWidget):
             QMessageBox.warning(self, "Remove failed", str(exc))
 
     def connect_profile(self, *, automatic=False):
-        if self._busy:
+        if self._connecting:
             return
         p = self.selected()
         if p is None:
@@ -264,18 +298,20 @@ class ConnectionsPanel(QWidget):
     def auto_connect(self, profile_id: str) -> bool:
         if not profile_id or not self.select_by_id(profile_id):
             return False
-        if self._busy:
+        if self._connecting:
             return False
         self.connect_profile(automatic=True)
         return True
 
     def _probe(self, profile, token, *, monitoring):
-        self._busy = True
-        self.test_button.setEnabled(False)
+        self._epoch += 1  # Supersedes any older request, including a background probe.
+        self._monitor_inflight = monitoring
         if not monitoring:
+            self._connecting = True
+            self.test_button.setEnabled(False)
+            self.selector.setEnabled(False)
             self.details.setText("Connecting in background…")
             self.status_changed.emit("BACKEND CONNECTING")
-        self._epoch += 1
         epoch = self._epoch
         worker = DiscoveryWorker(profile.url, token)
         self._worker = worker
@@ -287,7 +323,7 @@ class ConnectionsPanel(QWidget):
         QThreadPool.globalInstance().start(worker)
 
     def _monitor_tick(self):
-        if self._busy or not self._connected_profile:
+        if self._connecting or self._monitor_inflight or not self._connected_profile:
             return
         p = next((x for x in self.profiles if x.id == self._connected_profile), None)
         if p is None:
@@ -306,8 +342,12 @@ class ConnectionsPanel(QWidget):
     def _discovery_done(self, profile_id, epoch, monitoring, result, error):
         if epoch != self._epoch:
             return  # Late response after disconnect or another request.
-        self._busy = False
-        self.test_button.setEnabled(True)
+        if monitoring:
+            self._monitor_inflight = False
+        else:
+            self._connecting = False
+            self.test_button.setEnabled(True)
+            self.selector.setEnabled(True)
         self._worker = None
         if error:
             self._monitor.stop()
@@ -319,12 +359,14 @@ class ConnectionsPanel(QWidget):
             elif code == "INCOMPATIBLE_API":
                 self.details.setText("Incompatible backend API. Update backend or Studio.")
                 self.status_changed.emit("BACKEND INCOMPATIBLE")
-            elif monitoring and code in ("NETWORK_ERROR", "CONNECTION_ERROR"):
+            elif monitoring and code in TRANSIENT_ERRORS:
                 self._connected_profile = profile_id
                 self._retry_count += 1
                 self._monitor.setInterval(min(60000, 5000 * (2 ** min(self._retry_count, 4))))
                 self._monitor.start()
-                self.details.setText("Backend unreachable. Retrying in background; server jobs are untouched.")
+                self.details.setText(
+                    f"Backend unavailable ({code}). Retrying in background; server jobs are untouched."
+                )
                 self.status_changed.emit("BACKEND RECONNECTING")
             else:
                 self.details.setText(f"{code}: {message}. Use Connect / Test to retry.")
@@ -335,6 +377,9 @@ class ConnectionsPanel(QWidget):
             self.disconnect()
             return
         if p.instance_id and p.instance_id != result.instance_id:
+            # Pause health probes while the dialog is open so another mismatch dialog
+            # cannot stack on top of this one; a successful accept restarts the monitor.
+            self._monitor.stop()
             answer = QMessageBox.warning(
                 self, "Backend identity changed",
                 "This address now reports a DIFFERENT Morphorum installation. "
@@ -350,35 +395,47 @@ class ConnectionsPanel(QWidget):
                 self.status_changed.emit("BACKEND IDENTITY MISMATCH")
                 self.details.setText("Identity mismatch rejected. Connection stopped.")
                 return
-        changed_boot = bool(p.boot_id and p.boot_id != result.boot_id)
+        if p.boot_id and p.boot_id != result.boot_id:
+            self._restart_notice = True  # Stays visible until the user disconnects.
+        # Only touch the disk when the pinned identity actually changed; every health
+        # probe used to rewrite the profile file.
+        identity_changed = (p.instance_id, p.boot_id) != (result.instance_id, result.boot_id)
         p.instance_id = result.instance_id
         p.boot_id = result.boot_id
-        try:
-            self.store.save(self.profiles)
-        except OSError as exc:
-            self.details.setText(f"Connected, but could not save profile: {exc}")
-            self.status_changed.emit("BACKEND OFFLINE")
-            return
+        save_note = ""
+        if identity_changed:
+            try:
+                self.store.save(self.profiles)
+            except OSError as exc:
+                # The connection itself is fine; do not drop it over a failed save.
+                save_note = f"\nConnected, but the profile could not be saved: {exc}"
         available = ", ".join(k for k, v in result.features.items() if v) or "none advertised"
         self.details.setText(
             f"Connected: {p.name} | backend {result.version} | mode {result.mode}\n"
             f"Instance: {result.instance_id}\nBoot: {result.boot_id}\n"
             f"Features enabled: {available}"
-            + ("\nBackend restarted: refresh job state before continuing." if changed_boot else "")
+            + ("\nBackend restarted: refresh job state before continuing."
+               if self._restart_notice else "")
+            + save_note
         )
+        newly_connected = self._connected_profile != p.id
         self._connected_profile = p.id
         self._retry_count = 0
         self._monitor.setInterval(15000)
         self._monitor.start()
         self.status_changed.emit("BACKEND CONNECTED")
-        self.connection_succeeded.emit(p.id)
+        if newly_connected:
+            self.connection_succeeded.emit(p.id)
 
     def disconnect(self):
         self._monitor.stop()
         self._connected_profile = None
         self._retry_count = 0
+        self._restart_notice = False
         self._epoch += 1  # Ignore results from any in-flight background request.
-        self._busy = False
+        self._connecting = False
+        self._monitor_inflight = False
+        self.selector.setEnabled(True)
         self.test_button.setEnabled(True)
         self.details.setText("Disconnected from Studio (backend remains running).")
         self.status_changed.emit("BACKEND OFFLINE")

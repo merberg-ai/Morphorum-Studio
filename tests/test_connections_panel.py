@@ -56,11 +56,12 @@ def test_import_host_token_file(tmp_path, monkeypatch):
         panel.url.setText("http://127.0.0.1:7866")
         panel.save_profile()
         profile = panel.selected()
-        panel.trust_http.setChecked(True)
+        assert not panel.trust_http.isChecked()
         monkeypatch.setattr(module.QFileDialog, "getOpenFileName",
                             lambda *a, **k: (str(token_file), "Token files"))
         panel.import_token_file()
         assert vault.get(profile.id) == "local-test-secret-token"
+        assert not panel.trust_http.isChecked()  # Browsing a local file needs no network approval
         assert "token" not in store.path.read_text().lower()
         assert "imported" in panel.details.text().lower()
     finally:

@@ -276,6 +276,7 @@ class VideoPanel(QWidget):
         if not (self._project and self._job):
             return
         fps = None if self.same_fps.isChecked() else self.fps.value()
+        self.status.setText("Starting export…")
         self._service.start(self._project, self._job.id, self.format.currentData(),
                             self.quality.currentData(), fps)
 

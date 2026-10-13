@@ -259,7 +259,7 @@ class VideoService(QObject):
     # -- files --------------------------------------------------------------------------
 
     def save(self, export: VideoExport, destination: str) -> None:
-        client = self._client(600.0)
+        client = self._client(60.0)
         if client is None or not export.downloadable:
             return
         epoch = self._session.epoch
@@ -282,7 +282,7 @@ class VideoService(QObject):
         if local is not None:
             self.playback_ready.emit(export, str(local))
             return
-        client = self._client(600.0)
+        client = self._client(60.0)
         if client is None:
             return
         epoch = self._session.epoch

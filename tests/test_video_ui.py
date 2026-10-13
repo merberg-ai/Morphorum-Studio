@@ -85,7 +85,11 @@ def sync_runner(client, fn, callback):
 def make(tmp_path, features=FEATURES):
     QApplication.instance() or QApplication(["morphorum-studio-tests"])
     backend = Backend()
-    session = BackendSession(client_factory=lambda url, token, timeout=6.0: Client(backend))
+    def factory(url, token, timeout=6.0):
+        assert 0 < timeout <= 60, "BackendClient rejects timeouts above 60 s"
+        return Client(backend)
+
+    session = BackendSession(client_factory=factory)
     journal = SubmissionJournal(tmp_path / "journal")
     service = VideoService(session, journal, tmp_path / "cache", runner=sync_runner)
     session.connected(info(features=features), "tok")

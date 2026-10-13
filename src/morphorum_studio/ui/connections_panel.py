@@ -4,17 +4,26 @@ from __future__ import annotations
 from urllib.parse import urlsplit
 from pathlib import Path
 
-from PySide6.QtCore import QThreadPool, Signal, QTimer
+from PySide6.QtCore import QThreadPool, Qt, Signal, QTimer
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
-    QMessageBox, QPushButton, QVBoxLayout, QWidget, QFileDialog, QGroupBox
+    QApplication, QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit,
+    QMessageBox, QPushButton, QScrollArea, QSizePolicy, QToolButton, QVBoxLayout,
+    QWidget, QFileDialog
 )
 
-from morphorum_studio.backend.client import normalize_base_url
+from morphorum_studio.backend.client import BackendError, normalize_base_url
 from morphorum_studio.backend.credentials import CredentialStore
 from morphorum_studio.backend.profiles import ConnectionProfile, ProfileStore
+from morphorum_studio.backend.session import BackendSession, SessionInfo
 from morphorum_studio.backend.worker import DiscoveryWorker
 from morphorum_studio.ui.preferences import StudioPreferences
+
+# While connected, these failures usually mean the backend is restarting or briefly
+# overloaded, so the monitor keeps retrying quietly. Anything else (rejected credentials,
+# incompatible API, wrong server) stops monitoring and asks the user to act.
+TRANSIENT_ERRORS = frozenset({
+    "NETWORK_ERROR", "CONNECTION_ERROR", "HTTP_ERROR", "RATE_LIMITED", "INVALID_RESPONSE",
+})
 
 
 class ConnectionsPanel(QWidget):
@@ -22,13 +31,21 @@ class ConnectionsPanel(QWidget):
     profile_selected = Signal(str)
     connection_succeeded = Signal(str)
 
-    def __init__(self, parent=None, profile_store=None, credential_store=None, preferences=None):
+    def __init__(self, parent=None, profile_store=None, credential_store=None, preferences=None,
+                 session=None):
         super().__init__(parent)
+        # Shared, read-only view of this connection for the other pages (see backend/session.py).
+        self.session = session if session is not None else BackendSession(self)
+        self._probe_token = None
         self.store = profile_store or ProfileStore()
         self.vault = credential_store or CredentialStore()
         self.preferences = preferences or StudioPreferences()
-        self.profiles = self.store.load()
-        self._busy = False
+        loaded = self.store.load_recovering()
+        self.profiles = loaded.profiles
+        self._load_warning = loaded.warning
+        self._connecting = False  # A user-started or startup connect is in flight.
+        self._monitor_inflight = False  # A background health probe is in flight.
+        self._restart_notice = False
         self._worker = None
         self._epoch = 0
         self._connected_profile = None
@@ -36,75 +53,212 @@ class ConnectionsPanel(QWidget):
         self._monitor = QTimer(self)
         self._monitor.setInterval(15000)
         self._monitor.timeout.connect(self._monitor_tick)
-        layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("BACKEND CONNECTIONS / STUDIO"))
-        layout.addWidget(QLabel("Connect to an existing Morphorum GPU backend. No local GPU needed."))
-        self.selector = QComboBox()
-        self.selector.currentIndexChanged.connect(self.select_profile)
-        layout.addWidget(self.selector)
-        form = QFormLayout()
-        self.name = QLineEdit()
-        self.url = QLineEdit()
-        self.url.setPlaceholderText("http://127.0.0.1:7866")
-        self.token = QLineEdit()
-        self.token.setEchoMode(QLineEdit.EchoMode.Password)
-        self.token.setPlaceholderText("Stored in OS credential manager; blank keeps existing")
-        form.addRow("Profile name", self.name)
-        form.addRow("Backend URL", self.url)
-        form.addRow("Bearer token", self.token)
-        layout.addLayout(form)
-        # Provisioning is local: reading/saving a token does not transmit it.
-        credentials_group = QGroupBox("Client credential")
-        credential_layout = QVBoxLayout(credentials_group)
-        self.import_button = QPushButton("Browse and import token file…")
-        self.import_button.setObjectName("primaryAction")
-        self.import_button.setToolTip("Select a token file from this PC or a trusted mapped share")
-        credential_layout.addWidget(self.import_button)
-        self.credential_status = QLabel("No token imported for this session.")
-        self.credential_status.setWordWrap(True)
-        credential_layout.addWidget(self.credential_status)
-        self.trust_http = QCheckBox(
-            "Allow sending this credential over HTTP on my trusted LAN"
-        )
-        credential_layout.addWidget(self.trust_http)
-        guide = QLabel(
-            "1. On the GPU host, issue a client token with the command below.\n"
-            "2. Transfer the token file securely or browse a trusted network share.\n"
-            "3. Import it, then choose Connect / Test."
-        )
-        guide.setWordWrap(True)
-        credential_layout.addWidget(guide)
-        self.issue_command = QLineEdit(
-            '.\\.venv\\Scripts\\python.exe -m morphorum clients issue '
-            '"Morphorum Studio" --days 90 --out ".\\data\\studio-client.token"'
-        )
-        self.issue_command.setReadOnly(True)
-        self.issue_command.setToolTip("Run this in PowerShell inside the Morphorum backend checkout")
-        credential_layout.addWidget(self.issue_command)
-        layout.addWidget(credentials_group)
-        buttons = QHBoxLayout()
-        self.new_button = QPushButton("New")
-        self.save_button = QPushButton("Save profile")
-        self.remove_button = QPushButton("Remove")
-        self.remove_button.setObjectName("dangerAction")
-        self.test_button = QPushButton("Connect / Test")
-        self.test_button.setObjectName("primaryAction")
-        self.disconnect_button = QPushButton("Disconnect")
-        for button in (self.new_button, self.save_button, self.remove_button,
-                       self.test_button, self.disconnect_button):
-            buttons.addWidget(button)
-        layout.addLayout(buttons)
-        self.details = QLabel("No backend connected.")
-        self.details.setWordWrap(True)
-        layout.addWidget(self.details)
-        layout.addStretch()
+        self._build_ui()
         self.import_button.clicked.connect(self.import_token_file)
         self.new_button.clicked.connect(self.new_profile)
         self.save_button.clicked.connect(self.save_profile)
         self.remove_button.clicked.connect(self.remove_profile)
         self.test_button.clicked.connect(self.connect_profile)
         self.disconnect_button.clicked.connect(self.disconnect)
+        self.url.textChanged.connect(self._url_edited)
         self.refresh()
+        if self._load_warning:
+            self.details.setText(self._load_warning)
+
+    # ---- layout -------------------------------------------------------------------
+
+    @staticmethod
+    def _fixed(button: QPushButton, min_width: int = 0) -> QPushButton:
+        """Buttons keep their natural size instead of stretching across the card."""
+        button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        if min_width:
+            button.setMinimumWidth(min_width)
+        return button
+
+    @staticmethod
+    def _label(text: str, name: str, wrap: bool = True) -> QLabel:
+        label = QLabel(text)
+        label.setObjectName(name)
+        label.setWordWrap(wrap)
+        return label
+
+    def _card(self, title: str) -> tuple[QFrame, QVBoxLayout]:
+        card = QFrame()
+        card.setObjectName("card")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(20, 18, 20, 20)
+        layout.setSpacing(14)
+        layout.addWidget(self._label(title, "cardTitle", wrap=False))
+        return card, layout
+
+    def _field(self, caption: str, widget: QWidget, hint: str = "") -> QVBoxLayout:
+        box = QVBoxLayout()
+        box.setSpacing(6)
+        box.addWidget(self._label(caption, "fieldLabel", wrap=False))
+        box.addWidget(widget)
+        if hint:
+            box.addWidget(self._label(hint, "hint"))
+        return box
+
+    def _build_ui(self) -> None:
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setObjectName("connectionsScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        outer.addWidget(scroll)
+        content = QWidget()
+        content.setObjectName("connectionsContent")
+        scroll.setWidget(content)
+        page = QVBoxLayout(content)
+        page.setContentsMargins(38, 34, 38, 28)
+        column = QWidget()
+        column.setMaximumWidth(780)
+        column.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        page.addWidget(column, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        page.addStretch(1)
+        layout = QVBoxLayout(column)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(16)
+
+        layout.addWidget(self._label("BACKEND CONNECTIONS / STUDIO", "sectionCaption", wrap=False))
+        layout.addWidget(self._label("Backend connection", "pageHeading", wrap=False))
+        layout.addWidget(self._label(
+            "Connect to an existing Morphorum GPU backend. No local GPU needed.",
+            "pageDescription",
+        ))
+
+        # -- Backend card: which server, and the actions that act on it.
+        backend, box = self._card("Backend")
+        self.selector = QComboBox()
+        self.selector.currentIndexChanged.connect(self.select_profile)
+        self.new_button = self._fixed(QPushButton("New"), 72)
+        picker = QHBoxLayout()
+        picker.setSpacing(10)
+        picker.addLayout(self._field("Saved profile", self.selector), 1)
+        picker.addWidget(self.new_button, 0, Qt.AlignmentFlag.AlignBottom)
+        box.addLayout(picker)
+
+        self.name = QLineEdit()
+        self.name.setPlaceholderText("e.g. Workshop GPU")
+        self.url = QLineEdit()
+        self.url.setPlaceholderText("http://127.0.0.1:7866")
+        box.addLayout(self._field("Profile name", self.name))
+        box.addLayout(self._field("Backend URL", self.url))
+
+        self.save_button = self._fixed(QPushButton("Save profile"), 110)
+        self.remove_button = self._fixed(QPushButton("Remove"), 90)
+        self.remove_button.setObjectName("dangerAction")
+        self.disconnect_button = self._fixed(QPushButton("Disconnect"), 100)
+        self.test_button = self._fixed(QPushButton("Connect / Test"), 130)
+        self.test_button.setObjectName("primaryAction")
+        actions = QHBoxLayout()
+        actions.setSpacing(10)
+        actions.addWidget(self.remove_button)
+        actions.addStretch(1)
+        actions.addWidget(self.save_button)
+        actions.addWidget(self.disconnect_button)
+        actions.addWidget(self.test_button)
+        box.addLayout(actions)
+        layout.addWidget(backend)
+
+        # -- Credential card. Provisioning is local: reading/saving a token does not transmit it.
+        credential, cbox = self._card("Client credential")
+        self.credential_status = self._label("No token imported for this session.", "hint")
+        self.import_button = self._fixed(QPushButton("Import token file…"), 150)
+        self.import_button.setToolTip("Select a token file from this PC or a trusted mapped share")
+        status_row = QHBoxLayout()
+        status_row.setSpacing(12)
+        status_row.addWidget(self.credential_status, 1)
+        status_row.addWidget(self.import_button)
+        cbox.addLayout(status_row)
+
+        self.token = QLineEdit()
+        self.token.setEchoMode(QLineEdit.EchoMode.Password)
+        self.token.setPlaceholderText("Paste a token (optional)")
+        cbox.addLayout(self._field(
+            "Bearer token", self.token,
+            "Saved to the OS credential manager with the profile. Leave blank to keep the existing one.",
+        ))
+
+        self.trust_http = QCheckBox("Allow sending this credential over HTTP on my trusted LAN")
+        cbox.addWidget(self.trust_http)
+        cbox.addWidget(self._label(
+            "Only for a private network you control. HTTP does not encrypt the token.", "hint"))
+
+        self.help_toggle = QToolButton()
+        self.help_toggle.setObjectName("linkButton")
+        self.help_toggle.setCheckable(True)
+        self.help_toggle.setText("▸  How do I get a token?")
+        self.help_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        cbox.addWidget(self.help_toggle, 0, Qt.AlignmentFlag.AlignLeft)
+        self.help_panel = QWidget()
+        hbox = QVBoxLayout(self.help_panel)
+        hbox.setContentsMargins(0, 0, 0, 0)
+        hbox.setSpacing(8)
+        hbox.addWidget(self._label(
+            "1. On the GPU host, issue a client token with the command below.\n"
+            "2. Transfer the token file securely or browse a trusted network share.\n"
+            "3. Import it, then choose Connect / Test.",
+            "hint",
+        ))
+        self.issue_command = QLineEdit(
+            '.\\.venv\\Scripts\\python.exe -m morphorum clients issue '
+            '"Morphorum Studio" --days 90 --out ".\\data\\studio-client.token"'
+        )
+        self.issue_command.setReadOnly(True)
+        self.issue_command.setCursorPosition(0)
+        self.issue_command.setToolTip("Run this in PowerShell inside the Morphorum backend checkout")
+        self.copy_button = self._fixed(QPushButton("Copy"), 72)
+        command_row = QHBoxLayout()
+        command_row.setSpacing(10)
+        command_row.addWidget(self.issue_command, 1)
+        command_row.addWidget(self.copy_button)
+        hbox.addLayout(command_row)
+        self.help_panel.setVisible(False)
+        cbox.addWidget(self.help_panel)
+        layout.addWidget(credential)
+
+        # -- Status
+        status, sbox = self._card("Status")
+        self.details = self._label("No backend connected.", "connectionDetails")
+        self.details.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        sbox.addWidget(self.details)
+        layout.addWidget(status)
+
+        self.help_toggle.toggled.connect(self._toggle_help)
+        self.copy_button.clicked.connect(self._copy_command)
+
+    def _toggle_help(self, shown: bool) -> None:
+        self.help_panel.setVisible(shown)
+        self.help_toggle.setText(("▾" if shown else "▸") + "  How do I get a token?")
+
+    def _copy_command(self) -> None:
+        QApplication.clipboard().setText(self.issue_command.text())
+        self.copy_button.setText("Copied")
+        QTimer.singleShot(1500, lambda: self.copy_button.setText("Copy"))
+
+    def _url_edited(self, text):
+        """HTTP trust belongs to one exact URL: editing the address withdraws it."""
+        profile = self.selected()
+        saved = profile.url if profile else ""
+        try:
+            current = normalize_base_url(text)
+        except BackendError:
+            current = text.strip()
+        if current != saved and self.trust_http.isChecked():
+            self.trust_http.setChecked(False)
+
+    def _blocked(self) -> bool:
+        """True (with feedback) while a connection attempt is in progress."""
+        if self._connecting:
+            self.details.setText(
+                "A connection attempt is in progress. Wait for it, or press Disconnect to cancel."
+            )
+            return True
+        return False
 
     def refresh(self, selected=None):
         self.selector.blockSignals(True)
@@ -148,16 +302,16 @@ class ConnectionsPanel(QWidget):
         return False
 
     def new_profile(self):
-        if self._busy:
+        if self._blocked():
             return
         self.selector.setCurrentIndex(0)
         self.disconnect()
 
     def save_profile(self):
+        if self._blocked():
+            return
         if self._connected_profile is not None:
             self.disconnect()
-        if self._busy:
-            return
         try:
             url = normalize_base_url(self.url.text())
             name = self.name.text().strip()
@@ -185,7 +339,7 @@ class ConnectionsPanel(QWidget):
 
     def import_token_file(self):
         """Read a small host-issued secret locally, then store only in OS keyring."""
-        if self._busy:
+        if self._blocked():
             return
         p = self.selected()
         if p is None:
@@ -215,7 +369,7 @@ class ConnectionsPanel(QWidget):
         )
 
     def remove_profile(self):
-        if self._busy:
+        if self._blocked():
             return
         p = self.selected()
         if p is None:
@@ -233,7 +387,7 @@ class ConnectionsPanel(QWidget):
             QMessageBox.warning(self, "Remove failed", str(exc))
 
     def connect_profile(self, *, automatic=False):
-        if self._busy:
+        if self._connecting:
             return
         p = self.selected()
         if p is None:
@@ -264,19 +418,22 @@ class ConnectionsPanel(QWidget):
     def auto_connect(self, profile_id: str) -> bool:
         if not profile_id or not self.select_by_id(profile_id):
             return False
-        if self._busy:
+        if self._connecting:
             return False
         self.connect_profile(automatic=True)
         return True
 
     def _probe(self, profile, token, *, monitoring):
-        self._busy = True
-        self.test_button.setEnabled(False)
+        self._epoch += 1  # Supersedes any older request, including a background probe.
+        self._monitor_inflight = monitoring
         if not monitoring:
+            self._connecting = True
+            self.test_button.setEnabled(False)
+            self.selector.setEnabled(False)
             self.details.setText("Connecting in background…")
             self.status_changed.emit("BACKEND CONNECTING")
-        self._epoch += 1
         epoch = self._epoch
+        self._probe_token = token
         worker = DiscoveryWorker(profile.url, token)
         self._worker = worker
         worker.signals.completed.connect(
@@ -287,7 +444,7 @@ class ConnectionsPanel(QWidget):
         QThreadPool.globalInstance().start(worker)
 
     def _monitor_tick(self):
-        if self._busy or not self._connected_profile:
+        if self._connecting or self._monitor_inflight or not self._connected_profile:
             return
         p = next((x for x in self.profiles if x.id == self._connected_profile), None)
         if p is None:
@@ -298,6 +455,7 @@ class ConnectionsPanel(QWidget):
         except RuntimeError:
             self._monitor.stop()
             self._connected_profile = None
+            self.session.disconnected()
             self.details.setText("Credential store unavailable. Reconnect manually.")
             self.status_changed.emit("BACKEND OFFLINE")
             return
@@ -306,25 +464,36 @@ class ConnectionsPanel(QWidget):
     def _discovery_done(self, profile_id, epoch, monitoring, result, error):
         if epoch != self._epoch:
             return  # Late response after disconnect or another request.
-        self._busy = False
-        self.test_button.setEnabled(True)
+        if monitoring:
+            self._monitor_inflight = False
+        else:
+            self._connecting = False
+            self.test_button.setEnabled(True)
+            self.selector.setEnabled(True)
         self._worker = None
+        probe_token, self._probe_token = self._probe_token, None  # Held only for this attempt.
         if error:
             self._monitor.stop()
             self._connected_profile = None
             code, message = error
+            if monitoring and code in TRANSIENT_ERRORS:
+                self.session.reconnecting()
+            else:
+                self.session.disconnected()
             if code in ("AUTH_REQUIRED", "FORBIDDEN"):
                 self.details.setText("Authentication rejected. Check or reimport client token.")
                 self.status_changed.emit("BACKEND UNAUTHORIZED")
             elif code == "INCOMPATIBLE_API":
                 self.details.setText("Incompatible backend API. Update backend or Studio.")
                 self.status_changed.emit("BACKEND INCOMPATIBLE")
-            elif monitoring and code in ("NETWORK_ERROR", "CONNECTION_ERROR"):
+            elif monitoring and code in TRANSIENT_ERRORS:
                 self._connected_profile = profile_id
                 self._retry_count += 1
                 self._monitor.setInterval(min(60000, 5000 * (2 ** min(self._retry_count, 4))))
                 self._monitor.start()
-                self.details.setText("Backend unreachable. Retrying in background; server jobs are untouched.")
+                self.details.setText(
+                    f"Backend unavailable ({code}). Retrying in background; server jobs are untouched."
+                )
                 self.status_changed.emit("BACKEND RECONNECTING")
             else:
                 self.details.setText(f"{code}: {message}. Use Connect / Test to retry.")
@@ -335,6 +504,9 @@ class ConnectionsPanel(QWidget):
             self.disconnect()
             return
         if p.instance_id and p.instance_id != result.instance_id:
+            # Pause health probes while the dialog is open so another mismatch dialog
+            # cannot stack on top of this one; a successful accept restarts the monitor.
+            self._monitor.stop()
             answer = QMessageBox.warning(
                 self, "Backend identity changed",
                 "This address now reports a DIFFERENT Morphorum installation. "
@@ -347,38 +519,64 @@ class ConnectionsPanel(QWidget):
             if answer != QMessageBox.StandardButton.Yes:
                 self._monitor.stop()
                 self._connected_profile = None
+                self.session.disconnected()
                 self.status_changed.emit("BACKEND IDENTITY MISMATCH")
                 self.details.setText("Identity mismatch rejected. Connection stopped.")
                 return
-        changed_boot = bool(p.boot_id and p.boot_id != result.boot_id)
+        if p.boot_id and p.boot_id != result.boot_id:
+            self._restart_notice = True  # Stays visible until the user disconnects.
+        # Only touch the disk when the pinned identity actually changed; every health
+        # probe used to rewrite the profile file.
+        identity_changed = (p.instance_id, p.boot_id) != (result.instance_id, result.boot_id)
         p.instance_id = result.instance_id
         p.boot_id = result.boot_id
-        try:
-            self.store.save(self.profiles)
-        except OSError as exc:
-            self.details.setText(f"Connected, but could not save profile: {exc}")
-            self.status_changed.emit("BACKEND OFFLINE")
-            return
+        save_note = ""
+        if identity_changed:
+            try:
+                self.store.save(self.profiles)
+            except OSError as exc:
+                # The connection itself is fine; do not drop it over a failed save.
+                save_note = f"\nConnected, but the profile could not be saved: {exc}"
         available = ", ".join(k for k, v in result.features.items() if v) or "none advertised"
         self.details.setText(
             f"Connected: {p.name} | backend {result.version} | mode {result.mode}\n"
             f"Instance: {result.instance_id}\nBoot: {result.boot_id}\n"
             f"Features enabled: {available}"
-            + ("\nBackend restarted: refresh job state before continuing." if changed_boot else "")
+            + ("\nBackend restarted: refresh job state before continuing."
+               if self._restart_notice else "")
+            + save_note
         )
+        newly_connected = self._connected_profile != p.id
         self._connected_profile = p.id
+        self._publish_session(p, result, probe_token)
         self._retry_count = 0
         self._monitor.setInterval(15000)
         self._monitor.start()
         self.status_changed.emit("BACKEND CONNECTED")
-        self.connection_succeeded.emit(p.id)
+        if newly_connected:
+            self.connection_succeeded.emit(p.id)
+
+    def _publish_session(self, profile, result, token=None):
+        if token is None:
+            try:
+                token = self.vault.get(profile.id)
+            except RuntimeError:
+                token = None
+        self.session.connected(SessionInfo(
+            profile.id, profile.name, profile.url, result.version, result.mode,
+            result.instance_id, result.boot_id, dict(result.features),
+        ), token)
 
     def disconnect(self):
+        self.session.disconnected()
         self._monitor.stop()
         self._connected_profile = None
         self._retry_count = 0
+        self._restart_notice = False
         self._epoch += 1  # Ignore results from any in-flight background request.
-        self._busy = False
+        self._connecting = False
+        self._monitor_inflight = False
+        self.selector.setEnabled(True)
         self.test_button.setEnabled(True)
         self.details.setText("Disconnected from Studio (backend remains running).")
         self.status_changed.emit("BACKEND OFFLINE")

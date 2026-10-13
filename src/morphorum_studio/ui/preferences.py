@@ -31,6 +31,25 @@ class StudioPreferences:
     def set_trusted_http(self, profile_id: str, url: str, allowed: bool) -> None:
         self.settings.setValue("http_consent/" + profile_id, url if allowed else "")
 
+    def recent_projects(self, profile_id: str) -> list[str]:
+        """Most recently opened project ids for one connection profile (newest first)."""
+        raw = str(self.settings.value("projects/recent/" + profile_id, "") or "")
+        return [item for item in raw.split(",") if item]
+
+    def remember_project(self, profile_id: str, project_id: str, keep: int = 8) -> None:
+        items = [project_id] + [p for p in self.recent_projects(profile_id) if p != project_id]
+        self.settings.setValue("projects/recent/" + profile_id, ",".join(items[:keep]))
+
+    def forget_project(self, profile_id: str, project_id: str) -> None:
+        items = [p for p in self.recent_projects(profile_id) if p != project_id]
+        self.settings.setValue("projects/recent/" + profile_id, ",".join(items))
+
+    def image_model(self, profile_id: str) -> str:
+        return str(self.settings.value("imagelab/model/" + profile_id, "") or "")
+
+    def set_image_model(self, profile_id: str, model_id: str) -> None:
+        self.settings.setValue("imagelab/model/" + profile_id, model_id)
+
     def workspace(self) -> str:
         return str(self.settings.value("window/workspace", "Home") or "Home")
 

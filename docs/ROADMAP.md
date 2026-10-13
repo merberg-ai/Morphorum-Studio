@@ -54,7 +54,7 @@ Deliverables:
 
 ## S2. Models, projects and media assets
 
-**S2.1 Model discovery and dashboard (NOT STARTED, next proposed milestone)**
+**S2.1 Model discovery and dashboard (IMPLEMENTED on feature/studio-s2-1-dashboard; awaiting CI + physical Windows test, see [S2_1_DASHBOARD.md](S2_1_DASHBOARD.md))**
 
 Incremental implementation order (stop for user review before GPU operations):
 - [ ] Confirm dev-ui head/CI and live dev-backend API schema/feature flags; agree on branch from current dev-ui. S2 must not be written to Studio main automatically.
@@ -69,14 +69,14 @@ Incremental implementation order (stop for user review before GPU operations):
 
 **S2.1 exit:** Live metrics and model metadata are real, useful and resilient, with no local GPU dependencies. Console stream and more advanced diagnostic UI may wait for S3 where appropriate.
 
-**S2.2 Project Browser / revision-safe editing**
+**S2.2 Project Browser / revision-safe editing (IMPLEMENTED on feature/studio-s2-2-projects; awaiting CI + physical Windows test, see [S2_2_PROJECTS.md](S2_2_PROJECTS.md))**
 - List/search/create/open/trash project, project metadata, recent renders.
 - GET full normalized project with strong ETag; edits use conditional `PUT If-Match`.
 - Explicit 412 conflict UI: reload/compare/cancel, never silent overwrite.
 - New Project Wizard based on backend's project template; address known historical invalid 3D camera settings through validated defaults and tests rather than copying bad values.
 - Unsaved-change prompts, session restore and recent-project history.
 
-**S2.3 Project-owned assets**
+**S2.3 Project-owned assets (PARTLY IMPLEMENTED on feature/studio-s2-3-assets: source image + soundtrack; awaiting CI + physical Windows test, see [S2_3_ASSETS.md](S2_3_ASSETS.md))**
 - Upload selected local PNG source image, import soundtrack WAV/MP3/OGG/FLAC and analyze Motion Lab WAV using real API limits.
 - Download/list assets and validate sizes/SHA-256; atomic `.part` replacement and private local cache.
 - Distinguish server-relative asset URL from local path; no shared path assumptions.
@@ -90,20 +90,20 @@ Incremental implementation order (stop for user review before GPU operations):
 
 ## S3. Image generation, animations, job monitoring, downloads
 
-**S3.1 Single-image and queue**
+**S3.1 Single-image and queue (IMPLEMENTED on feature/studio-s3-1-image-lab, except img2img; awaiting CI + physical Windows test, see [S3_1_IMAGE_LAB.md](S3_1_IMAGE_LAB.md))**
 - Prompt/negative prompt, model, LoRAs, seeds, batch, resolution/steps/CFG/sampler with model-valid defaults.
 - Persist *exact* body and generated idempotency key **before** each POST; don't duplicate GPU jobs on lost response.
 - Live job progress: queue, model load, per-step, ETA when available, results/preview/gallery and cancel where supported.
 - Native result image viewer, zoom and safe save; backend does the generation.
 
-**S3.2 Animation and job recovery**
+**S3.2 Animation and job recovery (IMPLEMENTED on feature/studio-s3-2-animation; SSE deliberately not used, see [S3_2_ANIMATION.md](S3_2_ANIMATION.md); CI green + physical Windows test passed)**
 - Submit **full saved project** in `POST /api/animation/renders`, never just project ID.
 - Typed SSE `/api/client/jobs/{kind}/{job_id}/events` with authoritative GET polling fallback.
 - Correct boot ID resets, console gaps, queued/running/failed/cancelled/interrupted/resumable distinctions, and explicit resume confirmation.
 - Durable render session reattachment after Studio exit, LAN outage and backend restart; recover *all* completed frame records.
 - Show running frame strip, selected frame, latest completed PNG, progress bars and render performance details.
 
-**S3.3 Video/audio exports**
+**S3.3 Video/audio exports (IMPLEMENTED on feature/studio-s3-3-video, see [S3_3_VIDEO.md](S3_3_VIDEO.md); CI green + physical Windows test passed)**
 - Discover host FFmpeg availability; MP4/WebM with audio; track encoding and return completed URLs.
 - SHA-256-verified/atomic downloads of PNG/GIF/MP4/WebM. Play animation/video with correct media controls and audio.
 - Explicit warning if frozen soundtrack missing; do not claim audio present without evidence.

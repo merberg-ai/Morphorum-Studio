@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=75"]
+requires = ["setuptools>=77"]  # PEP 639 license expressions
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -27,7 +27,7 @@ where = ["src"]
 "" = "src"
 
 [tool.setuptools.package-data]
-morphorum_studio = ["assets/*.jpg"]
+morphorum_studio = ["assets/*.jpg", "assets/*.png", "assets/*.ico", "assets/fonts/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

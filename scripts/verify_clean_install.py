@@ -36,7 +36,13 @@ def main():
             "from morphorum_studio.ui.splash import splash_logo_path; "
             "assert splash_logo_path().is_file(); "
             "assert not QPixmap(str(splash_logo_path())).isNull(); "
-            "print('PASS: fresh wheel contains loadable splash logo')"
+            "from morphorum_studio.ui.fonts import FONT_FILES, load_bundled_fonts; "
+            "from morphorum_studio.ui.shell import asset_path; "
+            "assert not QPixmap(str(asset_path('logo-mark.png'))).isNull(); "
+            "assert asset_path('app-icon.ico').is_file(); "
+            "families=load_bundled_fonts(); "
+            "assert {'Sora','Geist','Geist Mono'} <= set(families), families; "
+            "print('PASS: fresh wheel contains splash logo, brand mark, icon and fonts')"
         )
         subprocess.run([str(python), "-c", probe], check=True, cwd=temp)
 

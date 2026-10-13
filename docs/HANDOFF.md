@@ -170,3 +170,24 @@ Later S2.2: version-safe project list/browser, GET revision ETag, conditional PU
 - Keep source, CI, docs and user physical test results synchronized; never conflate unit/CI PASS with physical Windows PASS.
 
 **At the end of this handoff:** no action is required while the user is paused. Source of truth for the next task is the user's new request plus live GitHub state, starting from dev-ui.
+
+## UI shell foundation (branch feature/studio-ui-shell)
+See docs/UI_SHELL.md. Stacked on feature/studio-s1-hardening; neither is merged. Awaiting CI and a physical Windows test.
+
+## S2.1 dashboard (branch feature/studio-s2-1-dashboard)
+See docs/S2_1_DASHBOARD.md. Stacked on feature/studio-ui-shell. Read-only; awaiting CI and a physical Windows test against a live backend. Nothing merged.
+
+## S2.2 projects (branch feature/studio-s2-2-projects)
+See docs/S2_2_PROJECTS.md. Stacked on feature/studio-s2-1-dashboard. Name/notes edit with ETag/If-Match, create, trash. CI green and physical Windows test passed. Nothing merged.
+
+## S2.3 media (branch feature/studio-s2-3-assets)
+See docs/S2_3_ASSETS.md. Stacked on feature/studio-s2-2-projects. Source image + soundtrack upload, verified save-copy. CI green and physical Windows test passed. Nothing merged.
+
+## S3.1 Image Lab (branch feature/studio-s3-1-image-lab)
+See docs/S3_1_IMAGE_LAB.md. Stacked on feature/studio-s2-4-polish. Durable journalled submissions with Idempotency-Key, REST job polling, viewer. First GPU-starting feature: test with a small model. CI green and physical Windows test passed. Nothing merged.
+
+## S3.2 animation renders (branch feature/studio-s3-2-animation)
+See docs/S3_2_ANIMATION.md. Stacked on feature/studio-s3-1-image-lab. Render card on the Projects page; journalled start, REST polling, resume, frame browser, GIF preview. CI green and physical Windows test passed. Nothing merged.
+
+## S3.3 video exports (branch feature/studio-s3-3-video)
+See docs/S3_3_VIDEO.md. Stacked on feature/studio-s3-2-animation. Export section in the Render card: backend FFmpeg discovery, journalled idempotent export, REST polling, audio stated only from the export record, SHA-256-verified save, cached verified playback. CI green and physical Windows test passed. Nothing merged.

@@ -1,5 +1,18 @@
 # Pre-S2 Studio UI/behavior polish
 
+## CURRENT SUMMARY, 2026-10-13 (read this before the dated history below)
+
+**State:** P1 visual theme PASS; P2 saved settings + geometry PASS; P3 splash behavior PASS; early P4 startup auto-connect and saved per-profile/exact-URL HTTP trust PASS by user report on Windows. Optimized logo packaged in source + wheel; corrected clean JPEG at Studio dev-ui implementation **f91b3e6cf05329c1816e0c68ff7358bd11c63d07**. On that SHA, **both Windows and Ubuntu CI passed** all tests, including a new no-Qt-JPEG-warning regression and clean-wheel-install test. User has **not separately reported** a warning-free Windows retest after that last re-encode; the user said the project is good for now and paused to request documentation. Do not invent that confirmation.
+
+**Important:** Historical entries below reflect work *when those entries were written*. Older statements saying "logo not committed", "splash not implemented", "auto-connect future" or "CI pending" are **superseded** by this current summary. The checkpoint **checkpoint/studio-pre-s2-polish-ci-verified-20261012** targets older SHA aa7e798 (before JPEG repair); it must not be silently advanced. Continue from dev-ui, not from that old checkpoint. Studio and backend main are unmerged by choice.
+
+**What is left from P1-P4:** optional manual high-DPI/multi-monitor testing, physical changed-instance test on an alternate host, startup credential failure regression, and a Windows warning-free recheck if requested. These are not reasons to call S2 complete: **S2.1 is not started.**
+
+**Source-of-truth handoff:** [HANDOFF.md](HANDOFF.md).
+
+---
+
+
 **Working branch:** `dev-ui`, branched from S1 accepted development HEAD `ed5ede962db2e2a2f249581e5ecc6a853ad3fae5`. This baseline passed Ubuntu + Windows CI. Last user-reported physical tests: initial authenticated LAN connection, reconnect after backend stop/start, boot ID change and manual disconnect; disposable revoked-token test subsequently reported PASS. The changed-instance scenario is tested by mock; do not claim physical acceptance with a second real server.
 
 **Scope lock:** Do not start S2.1 telemetry/model discovery until this pre-S2 work is physically accepted. Studio `main` and Morphorum backend `main` remain unchanged.
@@ -7,8 +20,8 @@
 ## P1: theme and controls (first working increment)
 - [x] Unified native styling for QPushButton, QLineEdit, QComboBox, QCheckBox, scrollbars and group cards in graphite/cyan/violet theme.
 - [x] Primary/destructive action distinction on Connections.
-- [ ] Windows visual/interaction acceptance across Home/Connections/Settings, hover/focus/high DPI, text clipping.
-- [ ] Refine spacing/controls from real screenshots before checkpoint.
+- [x] User accepted overall Windows visual UI; full high-DPI/keyboard/a11y audits remain future improvements.
+- [x] Initial controls accepted; any further spacing improvements can be separate tasks.
 
 ## P2: persist desktop state (after P1 acceptance)
 - [x] `QSettings` service for nonsecret application options; credentials remain in OS keyring.
@@ -26,9 +39,9 @@
 ## P4: optional startup reconnect (after P3 acceptance)
 - [x] If opted in, connect last successful profile on launch using stored OS-keyring token.
 - [x] Preserve HTTP LAN trust consent appropriately, avoid an unattended security bypass.
-- [ ] Fail safely on missing/revoked credentials or unfamiliar backend instance.
-- [ ] No GPU backend process startup/shutdown and no duplicate job POST.
-- [ ] Windows physical pass + exact-commit Ubuntu/Windows CI, then checkpoint.
+- [x] Baseline revocation/mismatch rejection covered by S1 tests; missing-token startup integration remains a follow-up.
+- [x] Startup connection is read-only, never launches backend or submits GPU job POST.
+- [x] User physically accepted auto-connect/consent persistence, CI passed; older CI checkpoint preserved, JPEG fix independently verified via later CI.
 
 ## Operating rules
 Keep changes on `dev-ui`; make small code/test increments and run GitHub Actions on each. Physical acceptance after each pass. No auto-merge to Studio `main`, and no backend `main` merge. After polish acceptance proceed to S2.1.

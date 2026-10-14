@@ -154,6 +154,10 @@ class QueueService(QObject):
     def available(self) -> bool:
         return any(self.sources)
 
+    def active_count(self) -> int:
+        """Jobs the last refresh saw running or waiting (0 when nothing has been loaded)."""
+        return sum(1 for e in (self._last or ()) if e.active)
+
     def set_active(self, active: bool) -> None:
         if active == self._on:
             return

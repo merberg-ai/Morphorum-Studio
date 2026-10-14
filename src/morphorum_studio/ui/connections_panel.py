@@ -285,7 +285,8 @@ class ConnectionsPanel(QWidget):
         self.selector.clear()
         self.selector.addItem("New connection", None)
         for p in self.profiles:
-            self.selector.addItem(p.name, p.id)
+            if p.kind == "remote":  # the Studio-managed backend is handled by the Simple panel
+                self.selector.addItem(p.name, p.id)
         if selected:
             index = self.selector.findData(selected)
             self.selector.setCurrentIndex(index if index >= 0 else 0)
@@ -418,11 +419,13 @@ class ConnectionsPanel(QWidget):
         except RuntimeError as exc:
             QMessageBox.warning(self, "Credential store", str(exc))
             return
-        if token and urlsplit(p.url).scheme == "http" and not self.preferences.trusted_http(p.id, p.url) and automatic:
+        if token and urlsplit(p.url).scheme == "http" and p.kind == "remote" \
+                and not self.preferences.trusted_http(p.id, p.url) and automatic:
             self.details.setText("Auto-connect paused: approve trusted HTTP in Connections and save the profile.")
             self.status_changed.emit("BACKEND OFFLINE")
             return
-        if token and urlsplit(p.url).scheme == "http" and not self.trust_http.isChecked():
+        if token and urlsplit(p.url).scheme == "http" and p.kind == "remote" \
+                and not self.trust_http.isChecked():
             answer = QMessageBox.warning(
                 self, "Unencrypted connection",
                 "HTTP does not encrypt bearer tokens. Only continue if this is a trusted "
@@ -436,11 +439,47 @@ class ConnectionsPanel(QWidget):
         self._probe(p, token, monitoring=False)
 
     def auto_connect(self, profile_id: str) -> bool:
+        # The Studio-managed backend is started by its own panel, never by a silent auto-connect.
         if not profile_id or not self.select_by_id(profile_id):
             return False
         if self._connecting:
             return False
         self.connect_profile(automatic=True)
+        return True
+
+    # ---- Studio-managed backend (used by the Simple panel) ------------------------
+
+    def managed_profile(self):
+        return next((p for p in self.profiles if p.kind == "managed"), None)
+
+    def ensure_managed_profile(self, url: str) -> ConnectionProfile:
+        """The single profile for the Studio-managed backend, created or re-pointed at ``url``."""
+        url = normalize_base_url(url)
+        p = self.managed_profile()
+        if p is None:
+            p = ConnectionProfile.create("Local backend (managed by Studio)", url)
+            p.kind = "managed"
+            self.profiles.append(p)
+        elif p.url != url:
+            p.url, p.instance_id, p.boot_id = url, "", ""
+        else:
+            return p
+        self.store.save(self.profiles)
+        return p
+
+    def connect_managed(self) -> bool:
+        """Connect to the managed backend with its saved credential. False if it cannot start now."""
+        p = self.managed_profile()
+        if p is None or self._connecting:
+            return False
+        try:
+            token = self.vault.get(p.id)
+        except RuntimeError as exc:
+            self.details.setText(str(exc))
+            return False
+        if self._connected_profile is not None and self._connected_profile != p.id:
+            self.disconnect()
+        self._probe(p, token, monitoring=False)
         return True
 
     def _probe(self, profile, token, *, monitoring):

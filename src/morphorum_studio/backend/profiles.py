@@ -27,6 +27,7 @@ class ConnectionProfile:
     url: str
     instance_id: str = ""
     boot_id: str = ""
+    kind: str = "remote"  # "managed": the local backend Studio runs itself (see managed.py)
 
     @classmethod
     def create(cls, name: str, url: str) -> "ConnectionProfile":
@@ -58,6 +59,8 @@ def _parse_profile(item: object) -> ConnectionProfile:
     for key in ("instance_id", "boot_id"):
         if not isinstance(data.get(key, ""), str):
             raise ValueError(f"profile {key} is not text")
+    if data.get("kind", "remote") not in ("remote", "managed"):
+        raise ValueError("profile kind is not recognised")
     try:
         profile = ConnectionProfile(**data)
         profile.url = normalize_base_url(profile.url)

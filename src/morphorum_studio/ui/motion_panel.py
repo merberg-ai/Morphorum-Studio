@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QMessageBox,
     QPushButton,
     QSizePolicy,
@@ -49,6 +50,14 @@ from morphorum_studio.backend.motion import (
     preset_label,
     unique_id,
 )
+from morphorum_studio.backend.audio import (
+    STARTERS,
+    AudioAnalysis,
+    new_audio_layer,
+    refit_envelope,
+)
+from morphorum_studio.ui.audio_service import AudioService
+from morphorum_studio.ui.audio_widgets import AudioControls, AudioLayerForm, EnvelopeView
 from morphorum_studio.ui.motion_service import MotionService
 from morphorum_studio.ui.tokens import DARK
 
@@ -160,11 +169,21 @@ class MotionChart(QWidget):
 
 class MotionPanel(QFrame):
     applied = Signal(str)  # project id: the camera tracks changed, reload the timeline
+    playhead_requested = Signal(int)  # audition moved the playhead
 
-    def __init__(self, service: MotionService) -> None:
+    def __init__(self, service: MotionService, audio_service: AudioService | None = None,
+                 audio_decoder=None, audition=None) -> None:
         super().__init__()
         self.setObjectName("card")
         self._service = service
+        self._audio_service = audio_service
+        self._audio_decoder, self._audition = audio_decoder, audition
+        self._analysis: AudioAnalysis | None = None
+        self._recovering: set[str] = set()
+        self._pulses: dict[str, list] = {}
+        self._pulses_stale = True
+        self._soundtrack_text = ""
+        self._playhead = 0
         self._project_id: str | None = None
         self._state: MotionState | None = None
         self._saved: list[dict] = []
@@ -180,6 +199,11 @@ class MotionPanel(QFrame):
         service.failed.connect(self._failed)
         service.busy_changed.connect(lambda _b: self._update())
         service.cleared.connect(self.clear)
+        service.soundtrack_known.connect(self._soundtrack_known)
+        if self.audio is not None:
+            self.audio.analysis_ready.connect(self._analysis_ready)
+            self.audio.playhead_requested.connect(self.playhead_requested)
+            audio_service.failed.connect(self._audio_failed)
         self._update()
 
     # -- construction -------------------------------------------------------------------
@@ -213,7 +237,27 @@ class MotionPanel(QFrame):
                        self.remove_button, self.up_button, self.down_button):
             button.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
             row.addWidget(button)
+        self.add_audio_button = QPushButton("+ Audio")
+        self.add_audio_button.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        self.audio_menu = QMenu(self.add_audio_button)
+        for label, name, band, axis, distance, detection in STARTERS:
+            action = self.audio_menu.addAction(label)
+            action.triggered.connect(
+                lambda _c=False, n=name, b=band, a=axis, d=distance, m=detection:
+                self._add_audio(n, b, a, d, m))
+        self.add_audio_button.setMenu(self.audio_menu)
+        row.insertWidget(2, self.add_audio_button)
         box.addLayout(row)
+
+        self.audio = None
+        if self._audio_service is not None:
+            self.audio = AudioControls(self._audio_service, self._audio_decoder, self._audition)
+            box.addWidget(_label("Audio", "fieldLabel"))
+            box.addWidget(self.audio)
+            self.soundtrack_note = _label("", "hint", wrap=True)
+            box.addWidget(self.soundtrack_note)
+        else:
+            self.add_audio_button.setVisible(False)
 
         # -- editor for the selected layer
         self.editor = QWidget()
@@ -294,12 +338,17 @@ class MotionPanel(QFrame):
         krow.addWidget(self.remove_key_button)
         cform.addLayout(krow)
         self.forms.addWidget(curve_form)  # 2
+        self.audio_form = AudioLayerForm()
+        self.forms.addWidget(self.audio_form)  # 3
         ebox.addWidget(self.forms)
         self.kept_note = _label("", "hint", wrap=True)
         ebox.addWidget(self.kept_note)
         box.addWidget(self.editor)
 
         # -- preview chart
+        self.envelope = EnvelopeView()
+        self.envelope.setVisible(False)
+        box.addWidget(self.envelope)
         self.chart = MotionChart()
         box.addWidget(self.chart)
         legend = QHBoxLayout()
@@ -348,6 +397,7 @@ class MotionPanel(QFrame):
         self.axis_combo.activated.connect(lambda _i: self._edit("axis", self.axis_combo.currentData()))
         self.interp_combo.activated.connect(
             lambda _i: self._edit("interpolation", self.interp_combo.currentData()))
+        self.audio_form.edited.connect(self._audio_edited)
         self.key_table.itemChanged.connect(self._key_edited)
         self.add_key_button.clicked.connect(self._add_key)
         self.remove_key_button.clicked.connect(self._remove_key)
@@ -368,17 +418,34 @@ class MotionPanel(QFrame):
     def set_project(self, project_id: str | None) -> None:
         self.clear()
         self._project_id = project_id
+        if self._audio_service is not None:
+            self._audio_service.set_project(project_id)
         if project_id:
             self._service.load(project_id)
         self._update()
 
     def set_playhead(self, frame: int) -> None:
+        self._playhead = frame
         self.chart.set_frame(frame)
+        self.envelope.set_frame(frame)
+        if self.audio is not None:
+            self.audio.set_playhead(frame)
+
+    def stop_audition(self) -> None:
+        if self.audio is not None:
+            self.audio.stop_audition()
 
     def clear(self) -> None:
         self._state = None
         self._saved, self._layers = [], []
         self._error = ""
+        self._analysis = None
+        self._recovering.clear()
+        self._pulses, self._pulses_stale = {}, True
+        self._soundtrack_text = ""
+        if self.audio is not None:
+            self.audio.clear()
+            self.soundtrack_note.setText("")
         self.chart.clear("Press Preview to see the camera motion")
         self.limit_note.setText("")
         self._refill()
@@ -399,11 +466,16 @@ class MotionPanel(QFrame):
         self._loading = False
         self.chart.clear("Press Preview to see the camera motion")
         self.limit_note.setText("")
+        if self.audio is not None:
+            self.audio.configure(self._project_id, state.frames, state.fps, state.usable)
         self._refill()
         self._update()
 
     def _previewed(self, preview: MotionPreview) -> None:
         self._error = ""
+        self._pulses = {str(x.get("id")): list(x.get("pulses") or []) for x in preview.layers
+                        if x.get("type") == "audio"}
+        self._pulses_stale = False
         self.chart.set_series(preview.series)
         notes = []
         if preview.limited:
@@ -488,6 +560,8 @@ class MotionPanel(QFrame):
 
     def _changed(self) -> None:
         self.chart.set_stale(self.chart.has_data)
+        self._pulses_stale = True
+        self._refresh_envelope()
         self._update()
 
     # -- add, copy, remove, move ----------------------------------------------------------
@@ -541,6 +615,7 @@ class MotionPanel(QFrame):
         try:
             self.editor.setVisible(layer is not None)
             if layer is None:
+                self.envelope.setVisible(False)
                 return
             kind = layer.get("type")
             is_editable = editable(layer)
@@ -554,6 +629,7 @@ class MotionPanel(QFrame):
                 "the others; editing it comes in a later step.")
             if not is_editable:
                 self.forms.setCurrentIndex(0)
+                self._refresh_envelope()
                 return
             frames = self._frames()
             self.blend_combo.setCurrentIndex(max(0, self.blend_combo.findData(layer.get("blend", "add"))))
@@ -561,7 +637,17 @@ class MotionPanel(QFrame):
             self.end_spin.setRange(1, max(1, frames))
             self.start_spin.setValue(int(layer.get("start_frame", 0)))
             self.end_spin.setValue(int(layer.get("end_frame", frames)))
-            if kind == "preset":
+            if kind == "audio":
+                self.forms.setCurrentIndex(3)
+                ready = self._analysis_for(layer) is not None
+                self.audio_form.load(layer, self._state.fps if self._state else 0.0, ready)
+                self.start_spin.setEnabled(ready)
+                self.end_spin.setEnabled(ready)
+                if not ready:
+                    self._recover(layer)
+            elif kind == "preset":
+                self.start_spin.setEnabled(True)
+                self.end_spin.setEnabled(True)
                 self.forms.setCurrentIndex(1)
                 index = self.preset_combo.findData(layer.get("preset"))
                 self.preset_combo.setCurrentIndex(max(0, index))
@@ -569,11 +655,14 @@ class MotionPanel(QFrame):
                 self.cycle_spin.setValue(float(layer.get("cycle_seconds", 8.0)))
                 self.fade_spin.setValue(float(layer.get("fade_seconds", 0.5)))
             else:
+                self.start_spin.setEnabled(True)
+                self.end_spin.setEnabled(True)
                 self.forms.setCurrentIndex(2)
                 self.axis_combo.setCurrentIndex(max(0, self.axis_combo.findData(layer.get("axis"))))
                 self.interp_combo.setCurrentIndex(
                     max(0, self.interp_combo.findData(layer.get("interpolation", "linear"))))
                 self._fill_keys(layer)
+            self._refresh_envelope()
         finally:
             self._loading = False
 
@@ -604,7 +693,12 @@ class MotionPanel(QFrame):
             self._loading = True
             self.end_spin.setValue(end)
             self._loading = False
+        before = layer["start_frame"], layer["end_frame"]
         layer["start_frame"], layer["end_frame"] = start, end
+        if layer.get("type") == "audio" and not self._refit(layer):
+            layer["start_frame"], layer["end_frame"] = before
+            self._show_layer()
+            return
         self._refresh_row_text()
         self._changed()
 
@@ -663,6 +757,96 @@ class MotionPanel(QFrame):
         self._fill_keys(layer)
         self._changed()
 
+    # -- audio layers (S5.2a) ---------------------------------------------------------------
+
+    def _analysis_for(self, layer: dict) -> AudioAnalysis | None:
+        if self._audio_service is None:
+            return None
+        analysis = self._audio_service.analysis(str(layer.get("sha256", "")))
+        if analysis is None and self._analysis is not None and self._analysis.sha256 == layer.get("sha256"):
+            analysis = self._analysis
+        return analysis
+
+    def _recover(self, layer: dict) -> None:
+        """Ask the backend for this layer's stored audio so its band and range can be edited."""
+        sha = str(layer.get("sha256", ""))
+        if sha and sha not in self._recovering and self._audio_service is not None:
+            self._recovering.add(sha)
+            self._audio_service.recover(sha)
+
+    def _refit(self, layer: dict) -> bool:
+        """Re-slice the envelope after a band or range change; False when it cannot be done."""
+        analysis = self._analysis_for(layer)
+        if analysis is None:
+            self._error = "This layer's audio is not loaded yet."
+            self._update()
+            return False
+        try:
+            refit_envelope(layer, analysis)
+        except ValueError as exc:
+            self._error = str(exc)
+            self._update()
+            return False
+        return True
+
+    def _add_audio(self, name: str, band: str, axis: str, distance: float, detection: str) -> None:
+        analysis = self._analysis
+        if analysis is None or len(self._layers) >= MAX_LAYERS or not self._frames():
+            self._error = "Load an audio file first."
+            self._update()
+            return
+        try:
+            layer = new_audio_layer(self._layers, analysis, self._frames(), name=name, band=band,
+                                    axis=axis, distance=distance, detection=detection)
+        except ValueError as exc:
+            self._error = str(exc)
+            self._update()
+            return
+        self._add(layer)
+
+    def _audio_edited(self, field: str, value) -> None:
+        layer = self._current()
+        if layer is None or layer.get("type") != "audio":
+            return
+        layer[field] = value
+        if field == "band" and not self._refit(layer):
+            return
+        self._refresh_row_text()
+        self._changed()
+
+    def _analysis_ready(self, analysis: AudioAnalysis) -> None:
+        self._analysis = analysis
+        self._recovering.discard(analysis.sha256)
+        self._error = ""
+        layer = self._current()
+        if layer is not None and layer.get("type") == "audio" and layer.get("sha256") == analysis.sha256:
+            self._show_layer()
+        self._update()
+
+    def _audio_failed(self, operation: str, code: str, message: str) -> None:
+        self._recovering.clear()
+        self._error = message or code
+        self._update()
+
+    def _soundtrack_known(self, soundtrack) -> None:
+        if soundtrack is None:
+            self._soundtrack_text = ("No soundtrack is attached to this project, so exported videos will have no "
+                                     "sound. Attach one in Library → project → Media.")
+        else:
+            self._soundtrack_text = (f"Final video soundtrack: {soundtrack.filename}"
+                                     + (f" (offset {soundtrack.offset_seconds:g} s)"
+                                        if soundtrack.offset_seconds else "") + ".")
+        self._update()
+
+    def _refresh_envelope(self) -> None:
+        layer = self._current()
+        audio = layer is not None and layer.get("type") == "audio"
+        self.envelope.setVisible(audio)
+        if audio:
+            self.envelope.set_layer(layer, self._frames(), self._pulses.get(str(layer.get("id"))),
+                                    self._pulses_stale)
+            self.envelope.set_frame(self._playhead)
+
     # -- preview, apply, revert -----------------------------------------------------------
 
     def _axes_toggled(self) -> None:
@@ -683,6 +867,7 @@ class MotionPanel(QFrame):
         self._error = ""
         self.chart.clear("Press Preview to see the camera motion")
         self.limit_note.setText("")
+        self._pulses_stale = True
         self._refill()
 
     # -- state ----------------------------------------------------------------------------
@@ -706,6 +891,12 @@ class MotionPanel(QFrame):
         room = usable and len(self._layers) < MAX_LAYERS
         for button in (self.add_preset_button, self.add_curve_button):
             button.setEnabled(bool(room and not busy))
+        self.add_audio_button.setEnabled(bool(room and not busy and self._analysis is not None))
+        self.add_audio_button.setToolTip("" if self._analysis is not None else "Load an audio file first")
+        if self.audio is not None:
+            has_audio = self._analysis is not None or any(x.get("type") == "audio" for x in self._layers)
+            self.soundtrack_note.setText(self._soundtrack_text if has_audio else "")
+            self.soundtrack_note.setVisible(bool(self.soundtrack_note.text()))
         self.duplicate_button.setEnabled(bool(has_layer and room and not busy))
         self.remove_button.setEnabled(bool(has_layer and not busy))
         row = self._row()

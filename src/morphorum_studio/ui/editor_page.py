@@ -58,11 +58,12 @@ class EditorPage(QWidget):
 
     def __init__(self, session: BackendSession, projects: ProjectsService,
                  service: TimelineService, render_service=None, video_service=None,
-                 motion_service=None) -> None:
+                 motion_service=None, audio_service=None) -> None:
         super().__init__()
         self._render_service = render_service
         self._video_service = video_service
         self._motion_service = motion_service
+        self._audio_service = audio_service
         self._player_job = None  # newest render of this project that has rendered frames
         self._frames: dict[tuple[str, int], bytes] = {}
         self._frame_failed: set[tuple[str, int]] = set()
@@ -288,7 +289,8 @@ class EditorPage(QWidget):
                 self.side_tabs[key] = button
             tabs.addStretch(1)
             sbox.addLayout(tabs)
-            self.motion_panel = MotionPanel(self._motion_service)
+            self.motion_panel = MotionPanel(self._motion_service, self._audio_service)
+            self.motion_panel.playhead_requested.connect(self._audition_frame)
             self.motion_panel.applied.connect(lambda _pid: self._reload())
             self.motion_panel.setVisible(False)
         sbox.addWidget(inspector)
@@ -325,6 +327,8 @@ class EditorPage(QWidget):
         if self.motion_panel is None:
             return
         motion = key == "motion"
+        if not motion:
+            self.motion_panel.stop_audition()
         self.inspector.setVisible(not motion)
         self.motion_panel.setVisible(motion)
         for name, button in self.side_tabs.items():
@@ -473,6 +477,18 @@ class EditorPage(QWidget):
         self.frame_spin.blockSignals(False)
         self._frame_moved(frame)
         self._request_preview(frame)
+
+    def _audition_frame(self, frame: int) -> None:
+        """The audition moved the playhead in real time; pictures follow once it settles."""
+        if self._timeline is None:
+            return
+        frame = max(0, min(frame, self._timeline.max_frames - 1))
+        self.view.set_frame(frame)
+        self.frame_spin.blockSignals(True)
+        self.frame_spin.setValue(frame)
+        self.frame_spin.blockSignals(False)
+        self._frame_moved(frame)
+        self._debounce.start()
 
     def _settled(self) -> None:
         self._service.request_frame(self.view.frame)

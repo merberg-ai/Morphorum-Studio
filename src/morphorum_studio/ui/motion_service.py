@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from PySide6.QtCore import QObject, Signal
 
-from morphorum_studio.backend.client import BackendClient
+from morphorum_studio.backend.assets import AssetsApi
+from morphorum_studio.backend.client import BackendClient, BackendError
 from morphorum_studio.backend.motion import MotionApi, MotionState, is_conflict, state_of
 from morphorum_studio.backend.session import BackendSession
 from morphorum_studio.backend.timeline import EditApi
@@ -13,6 +14,7 @@ from morphorum_studio.ui.dashboard_service import Runner, thread_pool_runner
 
 class MotionService(QObject):
     loaded = Signal(object, object)  # MotionState, tuple of preset names
+    soundtrack_known = Signal(object)  # the project's attached Soundtrack, or None when it has none
     previewed = Signal(object)  # MotionPreview
     applied = Signal(object)  # the saved raw project
     conflict = Signal(str)  # Apply was refused because hand-edited camera tracks would be replaced
@@ -92,9 +94,19 @@ class MotionService(QObject):
 
         def work(c: BackendClient):
             project, _etag = EditApi(c).project_revision(project_id)
-            return state_of(project), MotionApi(c).presets()
+            try:
+                soundtrack, known = AssetsApi(c).soundtrack(project_id), True
+            except (BackendError, ValueError):
+                soundtrack, known = None, False  # unknown: say nothing rather than guess
+            return state_of(project), MotionApi(c).presets(), soundtrack, known
 
-        self._start("load", work, lambda result: self.loaded.emit(*result))
+        def finished(result):
+            state, presets, soundtrack, known = result
+            self.loaded.emit(state, presets)
+            if known:
+                self.soundtrack_known.emit(soundtrack)
+
+        self._start("load", work, finished)
 
     def preview(self, layers: list) -> None:
         project_id = self._project_id

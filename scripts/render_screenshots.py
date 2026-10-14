@@ -132,6 +132,8 @@ def main() -> int:
             for row, name in enumerate(names):
                 window.navigation.setCurrentRow(row)
                 settle(150)
+                if connected and name == "Home":
+                    settle(900)  # recent projects and thumbnails load when Home becomes active
                 if connected and name == "Projects":
                     window.projects_page._select("alpha")
                     settle(300)

@@ -17,7 +17,7 @@ dark-only design mockup (ComfyUI/Runway mix). No backend behaviour changed.
   `app-icon.png/.ico` (dark rounded tile). A true vector logo needs a designer or a manual trace.
 
 ## Deliberately not built yet
-Command palette (Ctrl K), Home dashboard (S2.1), Lab/Graph/Timeline screens, Edit menu, extra themes.
+Lab/Graph/Timeline screens matching the mockups (see `LAYOUT_1_SHELL.md` and `docs/design/`), extra themes. The Ctrl K palette and host/footer status arrived in layout step 1.
 
 ## Windows acceptance checklist (physical test)
 1. Window shows no native title bar; custom bar shows mark, menus, connection pill, controls.

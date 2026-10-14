@@ -32,7 +32,7 @@ MODELS = {
     "loras": [{"id": "l1", "family": "sdxl", "kind": "loras", "name": "Fox Style"},
               {"id": "l2", "family": "flux", "kind": "loras", "name": "Ink Wash"}],
 }
-FEATURES = {"project_crud": True, "timeline": True, "model_discovery": True, "console_sse": False}
+FEATURES = {"project_crud": True, "animation_render": True, "timeline": True, "model_discovery": True, "console_sse": False}
 
 
 class Fake:
@@ -47,10 +47,13 @@ class Fake:
         if path.endswith("/renders") and path.startswith("/api/animation/projects/"):
             pid = path.split("/")[4]
             if pid == "alpha":
-                return {"renders": [{"id": "r1", "status": "completed", "created_at": "2026-10-01",
-                                     "latest_completed_frame": 5}]}
+                return {"renders": [{"id": "r1", "project_id": "alpha", "status": "completed",
+                                     "created_at": "2026-10-01", "latest_completed_frame": 5,
+                                     "progress": 1.0, "total_frames": 6}]}
             if pid == "beta":
-                return {"renders": [{"id": "r2", "status": "rendering", "created_at": "2026-10-02"}]}
+                return {"renders": [{"id": "r2", "project_id": "beta", "status": "rendering",
+                                     "created_at": "2026-10-02", "progress": 0.4,
+                                     "current_frame": 4, "total_frames": 10}]}
         if path == "/api/models":
             return {"models": MODELS.get((params or {}).get("kind"), [])}
         if path.endswith("/timeline"):
@@ -134,6 +137,8 @@ def main() -> int:
                 settle(150)
                 if connected and name == "Home":
                     settle(900)  # recent projects and thumbnails load when Home becomes active
+                if connected and name == "Render Queue":
+                    settle(700)  # the queue loads when its page becomes active
                 if connected and name == "Projects":
                     window.projects_page._select("alpha")
                     settle(300)

@@ -241,6 +241,22 @@ QLabel#footerText {
     font-size: 11px;
 }
 
+/* ---------- Queue ---------- */
+QFrame#queueRow {
+    background: $base;
+    border: 1px solid $line2;
+    border-radius: 10px;
+}
+QFrame#queueRow QProgressBar {
+    background: $line;
+    border: none;
+    border-radius: 3px;
+}
+QFrame#queueRow QProgressBar::chunk {
+    background: $cyan;
+    border-radius: 3px;
+}
+
 /* ---------- Lab: batch thumbnails and aspect tiles ---------- */
 QToolButton#thumb {
     border: 1px solid $line2;

@@ -8,6 +8,22 @@
 - Backend: **PR #32 (dev-backend to backend main) was merged by the user on 2026-10-14 at 12:51 UTC** (merge commit 0cb5d48; PR head and dev-backend are still 2046d36). Backend main had moved to cd8ddda when checked. Earlier notes below that call the PR "unmerged" are obsolete. Studio was built and tested against dev-backend 2046d36; re-check the API against backend main before relying on newer behaviour.
 - Current phase: **S5 (Motion Lab and Audio Director) is implemented and merged into dev-ui. The user paused work to review the roadmap.** S5.2a and S5.3 have passed CI but have NOT had a physical Windows test; S5.2b is not started.
 
+## RESUME POINT (paused 2026-10-14, to work on a separate feature)
+
+The user paused the main roadmap to build an unrelated feature while waiting for time to do solid Windows testing. When that feature is finished, resume exactly here. `dev-ui` is clean and fully contains every feature branch; there is no half-finished branch. Start the separate feature on its own branch from `dev-ui` and keep it out of the roadmap work.
+
+State at the pause: dev-ui last code merge `62eb67f` (S5.3), docs commit on top. S5.1 merged and tested; **S5.2a Audio Director and S5.3 Graph are merged but have not had a physical Windows test.**
+
+Do these in order when resuming:
+1. Ask the user for the Windows test result of S5.2a and S5.3 (checklists in docs/S5_2A_AUDIO_DIRECTOR.md and docs/S5_3_GRAPH.md). Priorities: MP3, FLAC and OGG loading, Audition playback, arrow-key selection in the Graph, the 880x560 window size. Fix whatever it finds on a new `feature/studio-s5-fixes-*` branch from dev-ui.
+2. Re-check the API against backend `main` (PR #32 was merged by the user on 2026-10-14; Studio was built against dev-backend 2046d36) and note any differences, especially anything new for audio analysis.
+3. Ask the user which comes next. The planned options, in the order I suggested them:
+   - **S6 resilience and performance:** regression tests for network loss, corrupt downloads, stale ETags and long render manifests; thumbnail cache limits; lazy frame loading; session recovery.
+   - **S6 accessibility and keyboard pass:** accessible names, contrast, tab order across all workspaces.
+   - **S5.2b:** custom bands, bass-intensity and ripple modes, spectrum view and the Backend/local analysis setting. Mostly blocked on the backend proposals in docs/BACKEND_PROPOSALS.md; ask whether to take those to the backend or build local analysis.
+   - **Controller recording, A/B loop, motion-preview wireframe, motion undo, custom presets** (ideas from Deforum Motion Studio).
+4. Then S7 packaging. Create immutable checkpoint refs for tested milestones before any discussion of merging Studio `main`; never merge `main` without explicit approval.
+
 ## If you are a new chat
 
 Read this file, docs/ROADMAP.md, docs/ARCHITECTURE.md, the per-step docs (S5_1, S5_2A, S5_3, BACKEND_PROPOSALS) and the backend contract documents. **Fetch current dev-ui source, branch heads and GitHub Actions instead of relying only on prose.** Never assume Studio main contains these features. Do not write files in the Morphorum backend repository unless separately approved.

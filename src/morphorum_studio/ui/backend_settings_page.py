@@ -248,10 +248,8 @@ class BackendSettingsPage(QWidget):
             refill()
             self._update()
 
-        column.addLayout(self._path_row(folders[index], changed, check=True, remove=remove,
+        column.addLayout(self._path_row(folders[index], changed, check=False, remove=None,
                                         name=f"Folder {index + 1}"))
-        column.addWidget(message)
-        show_message()
         return container
 
     def _path_row(self, value: str, on_change: Callable[[str], None], *, check: bool,

@@ -441,6 +441,10 @@ class ProjectsPage(QFrame):
 
     # -- selection and opening ------------------------------------------------------------
 
+    def open_project(self, project_id: str) -> None:
+        """Open a project by id (used by Home tiles); asks before discarding unsaved edits."""
+        self._select(project_id)
+
     def _select(self, project_id: str, from_list: bool = False) -> None:
         if project_id == self._selected and self._loaded is not None:
             return

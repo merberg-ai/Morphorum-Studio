@@ -44,6 +44,13 @@ class Fake:
         self.timeline = ed.Client(ed.Backend())
 
     def get_json(self, path, params=None):
+        if path.endswith("/renders") and path.startswith("/api/animation/projects/"):
+            pid = path.split("/")[4]
+            if pid == "alpha":
+                return {"renders": [{"id": "r1", "status": "completed", "created_at": "2026-10-01",
+                                     "latest_completed_frame": 5}]}
+            if pid == "beta":
+                return {"renders": [{"id": "r2", "status": "rendering", "created_at": "2026-10-02"}]}
         if path == "/api/models":
             return {"models": MODELS.get((params or {}).get("kind"), [])}
         if path.endswith("/timeline"):
@@ -66,8 +73,24 @@ class Fake:
     def upload_bytes(self, *args, **kwargs):
         raise BackendError("NOT_FOUND", "no route", 404)
 
-    def download(self, *args, **kwargs):
-        raise BackendError("NOT_FOUND", "no route", 404)
+    def download(self, path, sink, limit):
+        if "/frames/" not in path:
+            raise BackendError("NOT_FOUND", "no route", 404)
+        from PySide6.QtCore import QBuffer, QByteArray, QIODevice
+        from PySide6.QtGui import QImage, QLinearGradient, QPainter, QColor
+        image = QImage(640, 360, QImage.Format.Format_RGB32)
+        painter = QPainter(image)
+        gradient = QLinearGradient(0, 0, 640, 360)
+        gradient.setColorAt(0, QColor("#ff8a4c"))
+        gradient.setColorAt(1, QColor("#4f7dff"))
+        painter.fillRect(image.rect(), gradient)
+        painter.end()
+        data = QByteArray()
+        buffer = QBuffer(data)
+        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+        image.save(buffer, "PNG")
+        sink(bytes(data))
+        return len(data), None, None
 
 
 def settle(ms: int = 250) -> None:

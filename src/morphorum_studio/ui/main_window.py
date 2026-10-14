@@ -30,6 +30,7 @@ from morphorum_studio.ui.image_lab_page import ImageLabPage
 from morphorum_studio.ui.image_service import ImageLabService
 from morphorum_studio.ui.preferences import StudioPreferences
 from morphorum_studio.ui.projects_page import ProjectsPage
+from morphorum_studio.ui.recent_service import RecentProjectsService
 from morphorum_studio.ui.render_service import RenderService
 from morphorum_studio.ui.video_service import VideoService
 from morphorum_studio.ui.console_service import ConsoleService
@@ -200,14 +201,21 @@ class StudioMainWindow(QMainWindow):
         self.import_service = ImportService(self.session, self)
         self.setup_service = SetupService(self.session, self)
         self.models_service = ModelsService(self.session, self)
+        self.recent_service = RecentProjectsService(self.session, self)
         self.pages = QStackedWidget()
         self.pages.setObjectName("pages")
         for page_name, title, description in PAGES:
             if page_name == "Home":
-                self.home_page = HomePage(self.session, self.dashboard)
+                self.home_page = HomePage(self.session, self.dashboard, recent=self.recent_service)
                 self.home_page.open_connections.connect(
                     self._show_connections
                 )
+                self.home_page.new_project.connect(self._palette_new_project)
+                self.home_page.open_library.connect(
+                    lambda: self.navigation.setCurrentRow(names.index("Projects")))
+                self.home_page.open_lab.connect(
+                    lambda: self.navigation.setCurrentRow(names.index("Image Lab")))
+                self.home_page.open_project.connect(self._open_project_from_home)
                 self.pages.addWidget(self.home_page)
             elif page_name == "Projects":
                 self.projects_page = ProjectsPage(
@@ -248,6 +256,9 @@ class StudioMainWindow(QMainWindow):
         self.navigation.currentRowChanged.connect(self._remember_workspace)
         self.navigation.currentRowChanged.connect(
             lambda row: self.dashboard.set_active(row == names.index("Home"))
+        )
+        self.navigation.currentRowChanged.connect(
+            lambda row: self.recent_service.set_active(row == names.index("Home"))
         )
         self.navigation.currentRowChanged.connect(
             lambda row: self.projects_page.set_active(row == names.index("Projects"))
@@ -364,6 +375,10 @@ class StudioMainWindow(QMainWindow):
             Command("About Morphorum Studio", "", self._show_about, keywords="version help"),
         ]
         return commands
+
+    def _open_project_from_home(self, project_id: str) -> None:
+        self.navigation.setCurrentRow([entry[0] for entry in PAGES].index("Projects"))
+        self.projects_page.open_project(project_id)
 
     def _palette_new_project(self) -> None:
         self.navigation.setCurrentRow([entry[0] for entry in PAGES].index("Projects"))

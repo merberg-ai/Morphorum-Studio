@@ -46,7 +46,7 @@ Studio installs the backend by running `scripts/bootstrap.ps1 -InstallDir -Branc
 2. `-JsonProgress`: one JSON object per line (`{"stage":"ai-dependencies","index":4,"of":8,"message":"..."}`) so Studio
    can show a real progress bar instead of a section name.
 3. A stable exit code for each failure class (no space, no network, git missing, port busy) so Studio can explain it.
-4. `-Branch` also accepted by `update.bat`, which Studio needs for the branch switch in C4.
+(`scripts/update_windows.ps1 -Branch` already exists, so Studio's branch switch in C4 needs no backend change.)
 
 ## P8. A capability flag for the settings API
 Studio's Settings > Backend settings uses `GET/PUT /api/settings`, `POST /api/settings/validate-path` and

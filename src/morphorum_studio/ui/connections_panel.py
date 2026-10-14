@@ -407,6 +407,22 @@ class ConnectionsPanel(QWidget):
         except (RuntimeError, OSError) as exc:
             QMessageBox.warning(self, "Remove failed", str(exc))
 
+    def remove_managed_profile(self) -> bool:
+        """Forget the Studio-managed backend: its profile and credential. No prompt; the caller confirmed."""
+        p = self.managed_profile()
+        if p is None:
+            return True
+        try:
+            self.vault.delete(p.id)
+            self.preferences.set_trusted_http(p.id, p.url, False)
+            self.profiles.remove(p)
+            self.store.save(self.profiles)
+        except (RuntimeError, OSError):
+            return False
+        self.refresh()
+        self.disconnect()
+        return True
+
     def connect_profile(self, *, automatic=False):
         if self._connecting:
             return

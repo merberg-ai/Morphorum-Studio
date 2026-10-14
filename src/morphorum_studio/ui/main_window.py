@@ -39,6 +39,7 @@ from morphorum_studio.ui.setup_service import ModelsService, SetupService
 from morphorum_studio.ui.timeline_service import TimelineService
 from morphorum_studio.ui.console_page import ConsolePage
 from morphorum_studio.ui.projects_service import ProjectsService
+from morphorum_studio.ui.palette import Command, CommandPalette
 from morphorum_studio.ui.shell import NavRail, TitleBar
 from morphorum_studio.ui.settings_page import SettingsPage
 from morphorum_studio.ui.startup_settings import StartupSettingsPanel
@@ -72,9 +73,10 @@ PAGES: tuple[tuple[str, str, str], ...] = (
     ),
     (
         "Motion Lab",
-        "Motion and Audio",
-        "S5: camera composer, easing/smoothing, audio-driven layers, "
-        "preview, and recorded motion controls.",
+        "Pipeline Graph",
+        "Planned with S5: a read-only view of the project's pipeline (checkpoint, prompts, "
+        "camera, audio, export), generated from the project, with parameters edited in the "
+        "inspector. Motion and audio controls will live in the Timeline.",
     ),
     (
         "Render Queue",
@@ -109,13 +111,26 @@ def _label(text: str, object_name: str | None = None) -> QLabel:
 # Rail icon and short label per workspace (full names appear as tooltips).
 NAV_META: dict[str, tuple[str, str]] = {
     "Home": ("home", "Home"),
-    "Projects": ("library", "Projects"),
-    "Image Lab": ("sparkle", "Image"),
-    "Editor": ("timeline", "Editor"),
-    "Motion Lab": ("graph", "Motion"),
+    "Projects": ("library", "Library"),
+    "Image Lab": ("sparkle", "Lab"),
+    "Editor": ("timeline", "Timeline"),
+    "Motion Lab": ("graph", "Graph"),
     "Render Queue": ("queue", "Queue"),
     "Console": ("console", "Console"),
     "Settings": ("settings", "Settings"),
+}
+
+# Names shown to the person (rail tooltips, View menu, palette). The keys above stay the stable
+# page identifiers used by saved preferences and code, so renaming here never loses a workspace.
+DISPLAY: dict[str, str] = {
+    "Home": "Home",
+    "Projects": "Library",
+    "Image Lab": "Lab",
+    "Editor": "Timeline",
+    "Motion Lab": "Graph",
+    "Render Queue": "Queue",
+    "Console": "Console",
+    "Settings": "Settings",
 }
 
 def _label(text: str, object_name: str | None = None) -> QLabel:
@@ -162,7 +177,7 @@ class StudioMainWindow(QMainWindow):
 
         names = [entry[0] for entry in PAGES]
         self.navigation = NavRail(
-            [(name, NAV_META[name][1], NAV_META[name][0]) for name in names],
+            [(DISPLAY[name], NAV_META[name][1], NAV_META[name][0]) for name in names],
             footer_from=names.index("Settings"),
         )
         body_layout.addWidget(self.navigation)
@@ -267,13 +282,19 @@ class StudioMainWindow(QMainWindow):
         footer_layout.setContentsMargins(14, 5, 14, 5)
         footer_layout.setSpacing(18)
         footer_layout.addWidget(_label(f"Studio {__version__}", "footerText"))
-        footer_layout.addWidget(_label("Remote backend client", "footerText"))
         footer_layout.addStretch()
+        self.footer_vram = _label("VRAM —", "footerStat")
+        self.footer_gpu = _label("GPU —", "footerStat")
+        self.footer_queue = _label("Queue idle", "footerStat")
+        for stat in (self.footer_vram, self.footer_gpu, self.footer_queue):
+            footer_layout.addWidget(stat)
         self.footer_status = _label("BACKEND OFFLINE", "footerText")
         footer_layout.addWidget(self.footer_status)
         outer.addWidget(footer)
 
         self._build_menus(names)
+        self._build_palette(names)
+        self._wire_live_status()
         self.title_bar.sync_window_state()
         frameless.enable_mouse_tracking(self)
         self._edge_resizer = frameless.EdgeResizer(self)
@@ -301,7 +322,7 @@ class StudioMainWindow(QMainWindow):
 
         view_actions: list[QAction | None] = []
         for index, name in enumerate(names):
-            action = QAction(name, self)
+            action = QAction(DISPLAY[name], self)
             if index < 9:
                 action.setShortcut(QKeySequence(f"Ctrl+{index + 1}"))
             action.triggered.connect(lambda _checked=False, row=index: self.navigation.setCurrentRow(row))
@@ -322,6 +343,92 @@ class StudioMainWindow(QMainWindow):
         about = QAction("About Morphorum Studio", self)
         about.triggered.connect(self._show_about)
         self.title_bar.add_menu("Help", [keys, about])
+
+
+    # -- command palette -----------------------------------------------------------------
+
+    def _commands(self) -> list[Command]:
+        names = [entry[0] for entry in PAGES]
+        commands = [
+            Command(f"Go to {DISPLAY[name]}", f"Ctrl+{index + 1}" if index < 9 else "",
+                    lambda row=index: self.navigation.setCurrentRow(row),
+                    keywords=f"open switch workspace page {name}")
+            for index, name in enumerate(names)
+        ]
+        commands += [
+            Command("New project", "Ctrl+N", self._palette_new_project, keywords="create wizard"),
+            Command("Refresh this page", "F5", self._refresh_page, keywords="reload"),
+            Command("Backend connection settings", "", self._show_connections,
+                    keywords="connect host profile token"),
+            Command("Keyboard shortcuts", "F1", self._show_shortcuts, keywords="help keys"),
+            Command("About Morphorum Studio", "", self._show_about, keywords="version help"),
+        ]
+        return commands
+
+    def _palette_new_project(self) -> None:
+        self.navigation.setCurrentRow([entry[0] for entry in PAGES].index("Projects"))
+        self.projects_page.new_button.click()
+
+    def _build_palette(self, names: list[str]) -> None:
+        self.palette_action = QAction("Command palette", self)
+        self.palette_action.setShortcut(QKeySequence("Ctrl+K"))
+        self.palette_action.triggered.connect(self.open_palette)
+        self.addAction(self.palette_action)
+        self.title_bar.search_button.clicked.connect(lambda *_: self.open_palette())
+
+    def open_palette(self) -> CommandPalette:
+        palette = CommandPalette(self._commands(), self)
+        self._palette = palette
+        palette.open_centered()
+        return palette
+
+    # -- live status (host chip and footer) ----------------------------------------------
+
+    def _wire_live_status(self) -> None:
+        self._latency_ms: float | None = None
+        self.dashboard.set_watching(True)
+        self.dashboard.telemetry_updated.connect(self._footer_telemetry)
+        self.dashboard.telemetry_failed.connect(lambda _code: self._footer_telemetry(None))
+        self.dashboard.latency_updated.connect(self._on_latency)
+        self.dashboard.cleared.connect(self._on_session_cleared)
+        self.session.changed.connect(self._refresh_host)
+        self.render_service.job_updated.connect(self._footer_queue)
+        self.render_service.cleared.connect(lambda: self.footer_queue.setText("Queue idle"))
+
+    def _refresh_host(self) -> None:
+        info = self.session.info
+        if info is None or self.session.state == "offline":
+            self._latency_ms = None
+            self.title_bar.set_host("")
+            return
+        host = info.base_url.split("://", 1)[-1].rstrip("/")
+        latency = f" · {self._latency_ms:.0f} ms" if self._latency_ms is not None else ""
+        self.title_bar.set_host(f"{info.profile_name} · {host}{latency}")
+
+    def _on_latency(self, ms: float) -> None:
+        self._latency_ms = ms
+        self._refresh_host()
+
+    def _on_session_cleared(self) -> None:
+        self._footer_telemetry(None)
+        self._latency_ms = None
+        self._refresh_host()
+
+    def _footer_telemetry(self, telemetry) -> None:
+        gpu = telemetry.gpus[0] if telemetry is not None and telemetry.gpus else None
+        if gpu is None:
+            self.footer_vram.setText("VRAM —")
+            self.footer_gpu.setText("GPU —")
+            return
+        used, total = gpu.memory_used_mib, gpu.memory_total_mib
+        self.footer_vram.setText(
+            f"VRAM {used / 1024:.1f}/{total / 1024:.1f} GiB"
+            if used is not None and total else "VRAM —")
+        self.footer_gpu.setText(
+            f"GPU {gpu.utilization_percent:.0f}%" if gpu.utilization_percent is not None else "GPU —")
+
+    def _footer_queue(self, job) -> None:
+        self.footer_queue.setText("Queue idle" if job.final else f"Queue {job.status}")
 
     def _page_action(self, text: str, shortcut: str, page: str, run) -> QAction:
         """An action that only acts while ``page`` is showing, so shortcuts never hit another page.
@@ -353,6 +460,7 @@ class StudioMainWindow(QMainWindow):
             "Ctrl+Z\tUndo keyframe edit (Editor)\n"
             "Ctrl+Shift+Z or Ctrl+Y\tRedo keyframe edit (Editor)\n"
             "← →  (Shift ×10)\tStep the timeline playhead (Editor)\n"
+            "Ctrl+K\tCommand palette: search workspaces and commands\n"
             "F1\tThis list\n"
             "Ctrl+Q\tQuit\n\n"
             "While you are typing in a text box, its own editing keys take priority.")

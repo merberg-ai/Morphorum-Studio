@@ -73,6 +73,7 @@ def thread_pool_runner(owner: QObject) -> Runner:
 class DashboardService(QObject):
     telemetry_updated = Signal(object)  # Telemetry
     telemetry_failed = Signal(str)  # error code
+    latency_updated = Signal(float)  # milliseconds for the last telemetry round trip
     models_updated = Signal(object, object)  # ModelCatalog, (family id or None, tuple[ModelEntry])
     models_failed = Signal(str)
     cleared = Signal()
@@ -83,6 +84,8 @@ class DashboardService(QObject):
         self._session = session
         self._run = runner or thread_pool_runner(self)
         self._active = False
+        self._watching = False  # the shell footer wants telemetry on every page
+        self._poll_started = 0.0
         self._epoch = session.epoch
         self._telemetry_inflight = False
         self._models_inflight = False
@@ -120,7 +123,21 @@ class DashboardService(QObject):
         if active == self._active:
             return
         self._active = active
-        if active:
+        self._apply_wanted()
+
+    def set_watching(self, watching: bool) -> None:
+        """Keep telemetry flowing on every page (for the shell footer), not only on Home."""
+        if watching == self._watching:
+            return
+        self._watching = watching
+        self._apply_wanted()
+
+    @property
+    def _wanted(self) -> bool:
+        return self._active or self._watching
+
+    def _apply_wanted(self) -> None:
+        if self._wanted:
             self._start()
         else:
             self._telemetry_timer.stop()
@@ -189,17 +206,18 @@ class DashboardService(QObject):
             self.refresh_models()
         elif not self._models_inflight and not self._models_timer.isActive():
             self._models_timer.start(MODELS_INTERVAL_MS)  # Resume after an outage or hidden page.
-        if self._active and not self._telemetry_inflight and not self._telemetry_timer.isActive():
+        if self._wanted and not self._telemetry_inflight and not self._telemetry_timer.isActive():
             self._poll_telemetry()
 
     def _poll_telemetry(self) -> None:
-        if (not self._active or self._telemetry_inflight or self._session.state != "connected"
+        if (not self._wanted or self._telemetry_inflight or self._session.state != "connected"
                 or not self._session.feature("gpu_telemetry")):
             return
         client = self._session.client()
         if client is None:
             return
         self._telemetry_inflight = True
+        self._poll_started = monotonic()
         epoch = self._session.epoch
         self._run(client, lambda c: ReadApi(c).telemetry(),
                   lambda result, error: self._telemetry_done(epoch, result, error))
@@ -217,8 +235,9 @@ class DashboardService(QObject):
         else:
             self._failures = 0
             self._telemetry_ok_at = monotonic()
+            self.latency_updated.emit((self._telemetry_ok_at - self._poll_started) * 1000.0)
             self.telemetry_updated.emit(result)
-        if self._active and self._session.state == "connected":
+        if self._wanted and self._session.state == "connected":
             delay = min(TELEMETRY_MAX_BACKOFF_MS,
                         TELEMETRY_INTERVAL_MS * (2 ** min(self._failures, 3)))
             self._telemetry_timer.start(delay)

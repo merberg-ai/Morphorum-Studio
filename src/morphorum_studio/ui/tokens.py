@@ -121,6 +121,32 @@ QToolButton#winButton:hover {
 QToolButton#winClose:hover {
     background: #c8344a;
 }
+QPushButton#searchButton {
+    min-height: 0px;
+    padding: 0px 10px;
+    text-align: left;
+    border-radius: 13px;
+    border: 1px solid $line2;
+    background: $panel;
+    color: $faint;
+    font-size: 12px;
+}
+QPushButton#searchButton:hover, QPushButton#searchButton:focus {
+    background: $raised;
+    color: $dim;
+    border-color: $cyan;
+}
+QLabel#searchHint {
+    color: $faint;
+    background: transparent;
+    font-family: "$font_mono", "Consolas", monospace;
+    font-size: 10px;
+}
+QLabel#hostChip {
+    color: $dim;
+    font-family: "$font_mono", "Consolas", monospace;
+    font-size: 11px;
+}
 QPushButton#connectionPill {
     min-height: 0px;
     padding: 3px 12px 3px 8px;
@@ -204,10 +230,35 @@ QFrame#footer {
     background: $void;
     border-top: 1px solid $line;
 }
+QLabel#footerStat {
+    color: $dim;
+    font-family: "$font_mono", "Consolas", monospace;
+    font-size: 11px;
+}
 QLabel#footerText {
     color: $faint;
     font-family: "$font_mono", "Consolas", monospace;
     font-size: 11px;
+}
+
+/* ---------- command palette ---------- */
+QDialog#palette {
+    background: $panel;
+    border: 1px solid $line2;
+    border-radius: 10px;
+}
+QListWidget#paletteResults {
+    background: transparent;
+    border: none;
+    font-size: 13px;
+}
+QListWidget#paletteResults::item {
+    padding: 7px 10px;
+    border-radius: 6px;
+}
+QListWidget#paletteResults::item:selected {
+    background: $raised;
+    color: $text;
 }
 
 /* ---------- pages ---------- */

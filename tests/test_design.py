@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QApplication, QToolButton
 from morphorum_studio.ui.fonts import FONT_FILES, font_path, load_bundled_fonts
 from morphorum_studio.ui.frameless import edges_at
 from morphorum_studio.ui.icons import ICON_NAMES, pixmap
-from morphorum_studio.ui.main_window import NAV_META, PAGES, StudioMainWindow
+from morphorum_studio.ui.main_window import DISPLAY, NAV_META, PAGES, StudioMainWindow
 from morphorum_studio.ui.preferences import StudioPreferences
 from morphorum_studio.ui.shell import ConnectionPill, asset_path
 from morphorum_studio.ui.tokens import DARK, build_stylesheet
@@ -172,7 +172,7 @@ def test_view_menu_switches_workspaces(tmp_path):
         }
         assert set(menus) == {"File", "Edit", "View", "Help"}
         actions = menus["View"].actions()
-        assert [a.text() for a in actions][:len(PAGES)] == [p[0] for p in PAGES]
+        assert [a.text() for a in actions][:len(PAGES)] == [DISPLAY[p[0]] for p in PAGES]
         assert actions[-1].text() == "Refresh this page"
         actions[4].trigger()
         assert window.navigation.currentRow() == 4

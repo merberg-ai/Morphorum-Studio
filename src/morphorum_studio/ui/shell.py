@@ -24,6 +24,7 @@ from morphorum_studio.ui.tokens import DARK, Tokens
 
 TITLE_BAR_HEIGHT = 40
 RAIL_WIDTH = 64
+HOST_CHIP_MIN_BAR = 1100  # below this bar width the host chip is hidden
 
 
 def asset_path(*parts: str):
@@ -110,6 +111,8 @@ class TitleBar(QWidget):
         super().__init__()
         self._window = window
         self._tokens = tokens
+        self._host_text = ""
+        self._narrow = False
         self.setObjectName("titleBar")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setFixedHeight(TITLE_BAR_HEIGHT)
@@ -134,6 +137,34 @@ class TitleBar(QWidget):
         self.menus_layout.setSpacing(2)
         layout.addLayout(self.menus_layout)
         layout.addStretch(1)
+
+        self.search_button = QPushButton("  Search or run a command")
+        self.search_button.setObjectName("searchButton")
+        self.search_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.search_button.setToolTip("Command palette (Ctrl+K)")
+        self.search_button.setAccessibleName("Open command palette")
+        self.search_button.setFixedHeight(26)
+        self.search_button.setMinimumWidth(150)
+        self.search_button.setMaximumWidth(280)
+        self.search_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.search_button.setIcon(icons.icon("search", tokens.faint, size=14))
+        self.search_button.setIconSize(QSize(14, 14))
+        self.search_hint = QLabel("Ctrl+K", self.search_button)
+        self.search_hint.setObjectName("searchHint")
+        self.search_hint.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        hint_layout = QHBoxLayout(self.search_button)
+        hint_layout.setContentsMargins(0, 0, 8, 0)
+        hint_layout.addStretch(1)
+        hint_layout.addWidget(self.search_hint)
+        layout.addWidget(self.search_button)
+        layout.addStretch(1)
+
+        self.host_chip = QLabel("")
+        self.host_chip.setObjectName("hostChip")
+        self.host_chip.setToolTip("Connected backend host and last round-trip time")
+        self.host_chip.setVisible(False)
+        layout.addWidget(self.host_chip)
+        layout.addSpacing(8)
 
         self.connection_pill = ConnectionPill(tokens)
         layout.addWidget(self.connection_pill)
@@ -178,6 +209,23 @@ class TitleBar(QWidget):
         button.setMenu(menu)
         self.menus_layout.addWidget(button)
         return menu
+
+    def set_host(self, text: str) -> None:
+        """Show ``text`` (host and latency) beside the status pill; empty hides the chip."""
+        self._host_text = text
+        self.host_chip.setText(text)
+        self._sync_host_chip()
+
+    def _sync_host_chip(self) -> None:
+        self.host_chip.setVisible(bool(self._host_text) and not self._narrow)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        if self.isVisible():  # The chip gives way first when the bar runs out of room.
+            narrow = self.width() < HOST_CHIP_MIN_BAR
+            if narrow != self._narrow:
+                self._narrow = narrow
+                self._sync_host_chip()
 
     def toggle_maximized(self) -> None:
         if self._window.isMaximized():

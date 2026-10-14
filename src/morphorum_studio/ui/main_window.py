@@ -33,6 +33,8 @@ from morphorum_studio.ui.projects_page import ProjectsPage
 from morphorum_studio.ui.recent_service import RecentProjectsService
 from morphorum_studio.ui.audio_service import AudioService
 from morphorum_studio.ui.motion_service import MotionService
+from morphorum_studio.ui.graph_page import GraphPage
+from morphorum_studio.ui.graph_service import GraphService
 from morphorum_studio.ui.queue_page import QueuePage
 from morphorum_studio.ui.queue_service import QueueService
 from morphorum_studio.ui.render_service import RenderService
@@ -79,9 +81,9 @@ PAGES: tuple[tuple[str, str, str], ...] = (
     (
         "Motion Lab",
         "Pipeline Graph",
-        "Planned with S5: a read-only view of the project's pipeline (checkpoint, prompts, "
-        "camera, audio, export), generated from the project, with parameters edited in the "
-        "inspector. Motion and audio controls will live in the Timeline.",
+        "A read-only view of the project's pipeline (source, checkpoint, prompts, camera, "
+        "motion, audio, export), generated from the project. Motion and audio controls live "
+        "in the Timeline.",
     ),
     (
         "Render Queue",
@@ -209,6 +211,7 @@ class StudioMainWindow(QMainWindow):
         self.library_service = RecentProjectsService(
             self.session, self, count=24, refresh_ms=30000)
         self.queue_service = QueueService(self.session, self)
+        self.graph_service = GraphService(self.session, self)
         self.motion_service = MotionService(self.session, self)
         self.audio_service = AudioService(
             self.session,
@@ -251,6 +254,11 @@ class StudioMainWindow(QMainWindow):
                                               self.render_service, self.video_service,
                                               self.motion_service, self.audio_service)
                 self.pages.addWidget(self.editor_page)
+            elif page_name == "Motion Lab":
+                self.graph_page = GraphPage(self.session, self.graph_service)
+                self.graph_page.open_connections.connect(self._show_connections)
+                self.graph_page.open_target.connect(self._open_from_graph)
+                self.pages.addWidget(self.graph_page)
             elif page_name == "Render Queue":
                 self.queue_page = QueuePage(self.session, self.queue_service)
                 self.queue_page.open_connections.connect(self._show_connections)
@@ -293,6 +301,9 @@ class StudioMainWindow(QMainWindow):
         )
         self.navigation.currentRowChanged.connect(
             lambda row: self.queue_page.set_active(row == names.index("Render Queue"))
+        )
+        self.navigation.currentRowChanged.connect(
+            lambda row: self.graph_page.set_active(row == names.index("Motion Lab"))
         )
         self.connection_status.clicked.connect(
             lambda *_: self._show_connections()
@@ -405,6 +416,12 @@ class StudioMainWindow(QMainWindow):
         self.navigation.setCurrentRow([entry[0] for entry in PAGES].index("Editor"))
         self.editor_page.open_project(project_id)
 
+    def _open_from_graph(self, page: str, project_id: str) -> None:
+        if page == "Editor":
+            self._open_in_timeline(project_id)
+        else:
+            self._open_project_from_home(project_id)
+
     def _open_project_from_home(self, project_id: str) -> None:
         self.navigation.setCurrentRow([entry[0] for entry in PAGES].index("Projects"))
         self.projects_page.open_project(project_id)
@@ -491,6 +508,7 @@ class StudioMainWindow(QMainWindow):
         name = PAGES[self.navigation.currentRow()][0]
         button = {"Projects": lambda: self.projects_page.refresh_button,
                   "Editor": lambda: self.editor_page.reload,
+                  "Motion Lab": lambda: self.graph_page.refresh_button,
                   "Render Queue": lambda: self.queue_page.refresh_button}.get(name)
         if button is not None:
             button().click()

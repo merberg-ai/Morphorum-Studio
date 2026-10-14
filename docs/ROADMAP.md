@@ -142,6 +142,8 @@ Incremental implementation order (stop for user review before GPU operations):
 
 **Exit:** Core Motion Lab effects tested on physical Windows backend and consistent after reopen.
 
+*Checkpoints: S5.1 Motion tab (see [S5_1_MOTION_LAB.md](S5_1_MOTION_LAB.md)); S5.2a Audio Director (see [S5_2A_AUDIO_DIRECTOR.md](S5_2A_AUDIO_DIRECTOR.md)); S5.3 read-only pipeline Graph (IMPLEMENTED on feature/studio-s5-3-graph, see [S5_3_GRAPH.md](S5_3_GRAPH.md)). S5.2b waits on the backend proposals in [BACKEND_PROPOSALS.md](BACKEND_PROPOSALS.md).*
+
 ## S6. Desktop usability, polish and performance
 
 - Windows desktop layout: resizable docks/panels, multi-monitor/high-DPI, keyboard navigation, tooltips, error dialogs, autosave prompts.

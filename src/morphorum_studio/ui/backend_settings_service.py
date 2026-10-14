@@ -76,4 +76,4 @@ class BackendSettingsService(QObject):
         self._call("check", lambda api: (path, api.check_path(path)), lambda r: self.checked.emit(*r))
 
     def rescan(self) -> None:
-        self._call("rescan", lambda api: api.rescan(), self.scanned.emit, timeout=120.0)
+        self._call("rescan", lambda api: api.rescan(), self.scanned.emit, timeout=60.0)

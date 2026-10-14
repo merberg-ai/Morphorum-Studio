@@ -114,7 +114,12 @@ def _destroy_widgets():
 
 def rig(url="http://10.0.0.5:7866", connect=True, chosen=""):
     client = FakeClient()
-    session = BackendSession(client_factory=lambda base, token, timeout=6.0: client)
+    def factory(base, token, timeout=6.0):
+        if not 0 < timeout <= 60:  # the real BackendClient refuses anything else
+            raise ValueError("timeout must be in (0, 60] seconds")
+        return client
+
+    session = BackendSession(client_factory=factory)
     service = BackendSettingsService(session, runner=sync_runner)
     page = BackendSettingsPage(session, service, choose_folder=lambda parent, start: chosen)
     page.set_active(True)

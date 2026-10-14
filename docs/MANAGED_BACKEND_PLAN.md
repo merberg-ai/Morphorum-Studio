@@ -95,10 +95,20 @@ with the fakes only.
 - Studio and backend versions: the managed backend defaults to backend `main`; Studio checks the API contract version and
   the advertised features after connect and refuses an incompatible one with a clear message.
 
-## Decisions for you
-1. Folder default: `<Studio folder>/morphorum-backend` (as you described), with a chooser. OK?
-2. When Studio closes, should the managed backend **stop** (recommended; frees the GPU) or **keep running**? Make it a setting
-   with this default?
-3. Which backend branch should Simple mode install: `main` (now includes the merged DB2 work), or a pinned tag/commit?
-4. C1 first (manage your existing D:\Morphorum-test checkout) before the installer: agreed?
-5. OK to relax the two standing rules as described above?
+## Decisions (confirmed by Jim, 2026-10-14)
+1. Default folder is `<Studio folder>/morphorum-backend`, with a folder chooser.
+2. Studio stops the managed backend when Studio shuts down, by default. This is a setting ("Keep the backend running when Studio
+   closes").
+3. Simple mode installs backend **main**. After the install, the connection configuration lets the person **switch the
+   backend branch** (see below).
+4. The two standing rules are relaxed as described above (Studio runs the backend's own installer on explicit opt-in; Studio only
+   stops a backend it started).
+5. Still to confirm: build C1 first (manage an existing checkout) before the installer.
+
+## Switching the backend branch (added to C4)
+Available only for a managed install, in the connection configuration. Studio lists the remote branches (`git ls-remote`),
+shows a warning that anything other than `main` may not match this Studio's API contract, and requires the backend to be
+stopped. It runs a guarded `git fetch` and `git switch`, refuses if the checkout has local changes (never discards or force
+resets), re-runs the backend's update/repair so dependencies match, then restarts and re-checks the API contract and
+features. Projects live in the backend's `data/` folder, which the switch does not touch, but the screen says to back up
+first. A failed switch leaves the previous branch checked out and offers to switch back.

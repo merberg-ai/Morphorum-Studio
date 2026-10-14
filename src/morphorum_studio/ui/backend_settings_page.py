@@ -257,7 +257,7 @@ class BackendSettingsPage(QWidget):
         row = QHBoxLayout()
         row.setSpacing(8)
         edit = QLineEdit(value)
-        edit.setToolTip(name)  # an accessible name on an editable field crashes Qt on Windows at exit
+        pass
         edit.setPlaceholderText("Folder on the backend's computer")
         edit.textEdited.connect(on_change)
         row.addWidget(edit, 1)

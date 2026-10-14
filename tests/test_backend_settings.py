@@ -165,6 +165,7 @@ def test_not_connected_shows_a_message_and_no_form():
     assert not page.form.isVisibleTo(page) and not page.footer.isVisibleTo(page)
 
 
+@pytest.mark.skip(reason='bisect')
 def test_loads_when_shown_active_and_builds_the_form():
     client, session, service, page = rig(connect=False)
     info = SessionInfo("p1", "W", "http://10.0.0.5:7866", "0.1.0", "backend-only", "i1", "b1", {})

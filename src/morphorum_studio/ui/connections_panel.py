@@ -26,6 +26,26 @@ TRANSIENT_ERRORS = frozenset({
 })
 
 
+COLUMN_WIDTH = 780
+PAGE_MARGINS = 28 + 28
+
+
+class _FitScroll(QScrollArea):
+    """A scroll area whose content never shrinks below the height its wrapped text needs.
+
+    Qt lays word-wrapped labels out against a one-line minimum, so inside a short viewport the
+    cards were squeezed and their text overlapped. Giving the content a minimum height computed
+    for the current width makes the area scroll instead."""
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        inner = self.widget()
+        layout = inner.layout() if inner is not None else None
+        if layout is not None and layout.hasHeightForWidth():
+            width = min(self.viewport().width(), COLUMN_WIDTH + PAGE_MARGINS)
+            inner.setMinimumHeight(layout.totalHeightForWidth(width))
+
+
 class ConnectionsPanel(QWidget):
     status_changed = Signal(str)
     profile_selected = Signal(str)
@@ -103,7 +123,7 @@ class ConnectionsPanel(QWidget):
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        scroll = QScrollArea()
+        scroll = _FitScroll()
         scroll.setObjectName("connectionsScroll")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -113,9 +133,9 @@ class ConnectionsPanel(QWidget):
         content.setObjectName("connectionsContent")
         scroll.setWidget(content)
         page = QVBoxLayout(content)
-        page.setContentsMargins(38, 34, 38, 28)
+        page.setContentsMargins(28, 16, 28, 24)
         column = QWidget()
-        column.setMaximumWidth(780)
+        column.setMaximumWidth(COLUMN_WIDTH)
         column.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         page.addWidget(column, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         page.addStretch(1)

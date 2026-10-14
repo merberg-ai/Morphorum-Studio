@@ -35,6 +35,7 @@ from morphorum_studio.backend.timeline import (
     plan_move,
     plan_set,
 )
+from morphorum_studio.ui.motion_panel import MotionPanel
 from morphorum_studio.ui.player_panel import PlayerPanel
 from morphorum_studio.ui.projects_service import ProjectsService
 from morphorum_studio.ui.render_card import RenderCard
@@ -56,10 +57,12 @@ class EditorPage(QWidget):
     open_connections = Signal()
 
     def __init__(self, session: BackendSession, projects: ProjectsService,
-                 service: TimelineService, render_service=None, video_service=None) -> None:
+                 service: TimelineService, render_service=None, video_service=None,
+                 motion_service=None) -> None:
         super().__init__()
         self._render_service = render_service
         self._video_service = video_service
+        self._motion_service = motion_service
         self._player_job = None  # newest render of this project that has rendered frames
         self._frames: dict[tuple[str, int], bytes] = {}
         self._frame_failed: set[tuple[str, int]] = set()
@@ -269,7 +272,29 @@ class EditorPage(QWidget):
         right.addWidget(self.edit_status)
         right.addWidget(_label("Values and curves are evaluated by the backend. Each edit is saved to the "
                                "backend immediately and can be undone here.", "hint", wrap=True))
+        self.inspector = inspector
+        self.motion_panel = None
+        self.side_tabs: dict[str, QPushButton] = {}
+        if self._motion_service is not None:
+            tabs = QHBoxLayout()
+            tabs.setSpacing(8)
+            for key, text in (("keyframes", "Keyframes"), ("motion", "Motion")):
+                button = QPushButton(text)
+                button.setObjectName("segButton")
+                button.setCheckable(True)
+                button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+                button.clicked.connect(lambda _c=False, k=key: self.show_side(k))
+                tabs.addWidget(button)
+                self.side_tabs[key] = button
+            tabs.addStretch(1)
+            sbox.addLayout(tabs)
+            self.motion_panel = MotionPanel(self._motion_service)
+            self.motion_panel.applied.connect(lambda _pid: self._reload())
+            self.motion_panel.setVisible(False)
         sbox.addWidget(inspector)
+        if self.motion_panel is not None:
+            sbox.addWidget(self.motion_panel)
+            self.side_tabs["keyframes"].setChecked(True)
 
         self.render_card = None
         if self._render_service is not None:
@@ -294,6 +319,16 @@ class EditorPage(QWidget):
         self.interp.activated.connect(self._interp_chosen)
         self.undo_button.clicked.connect(self._undo)
         self.redo_button.clicked.connect(self._redo)
+
+    def show_side(self, key: str) -> None:
+        """Switch the right column between the keyframe inspector and the Motion Lab panel."""
+        if self.motion_panel is None:
+            return
+        motion = key == "motion"
+        self.inspector.setVisible(not motion)
+        self.motion_panel.setVisible(motion)
+        for name, button in self.side_tabs.items():
+            button.setChecked((name == "motion") == motion)
 
     # -- state --------------------------------------------------------------------------
 
@@ -355,6 +390,8 @@ class EditorPage(QWidget):
         self._reset_preview()
         if self.render_card is not None:
             self.render_card.set_project(project_id)
+        if self.motion_panel is not None:
+            self.motion_panel.set_project(project_id or None)
         if project_id:
             self._service.load(project_id)
         else:
@@ -445,6 +482,8 @@ class EditorPage(QWidget):
         self.player.set_frame(frame)
         if self.render_card is not None:
             self.render_card.set_playhead(frame)
+        if self.motion_panel is not None:
+            self.motion_panel.set_playhead(frame)
         self.curve.set_frame(frame)
         self._show_frame_label(frame)
         self._update_edit_controls()

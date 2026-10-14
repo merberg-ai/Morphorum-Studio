@@ -203,10 +203,10 @@ class BackendSettingsPage(QWidget):
 
         def fill() -> None:
             while rows.count():
-                item = rows.takeAt(0)
-                if item.widget() is not None:
-                    item.widget().setParent(None)
-                    item.widget().deleteLater()
+                widget = rows.takeAt(0).widget()
+                if widget is not None:
+                    widget.setParent(None)
+                    widget.deleteLater()
             if not folders:
                 rows.addWidget(_label("No folders yet.", "hint"))
             for index in range(len(folders)):

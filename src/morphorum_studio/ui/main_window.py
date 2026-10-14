@@ -51,6 +51,8 @@ from morphorum_studio.ui.console_page import ConsolePage
 from morphorum_studio.ui.projects_service import ProjectsService
 from morphorum_studio.ui.palette import Command, CommandPalette
 from morphorum_studio.ui.shell import NavRail, TitleBar
+from morphorum_studio.ui.backend_settings_page import BackendSettingsPage
+from morphorum_studio.ui.backend_settings_service import BackendSettingsService
 from morphorum_studio.ui.settings_page import SettingsPage
 from morphorum_studio.ui.startup_settings import StartupSettingsPanel
 
@@ -283,8 +285,10 @@ class StudioMainWindow(QMainWindow):
                     active_jobs=self.queue_service.active_count)
                 self.connection_hub = ConnectionHub(
                     self.connections_panel, self.managed_panel, self.preferences)
+                self.backend_settings_service = BackendSettingsService(self.session, self)
+                self.backend_settings_page = BackendSettingsPage(self.session, self.backend_settings_service)
                 self.settings_page = SettingsPage(
-                    self.connection_hub, StartupSettingsPanel(self.preferences))
+                    self.connection_hub, StartupSettingsPanel(self.preferences), self.backend_settings_page)
                 self.pages.addWidget(self.settings_page)
             else:
                 self.pages.addWidget(self._make_page(page_name, title, description))

@@ -256,7 +256,7 @@ class BackendSettingsPage(QWidget):
         row = QHBoxLayout()
         row.setSpacing(8)
         edit = QLineEdit(value)
-        edit.setAccessibleName(name)
+        pass  # edit.setAccessibleName(name)
         edit.setPlaceholderText("Folder on the backend's computer")
         edit.textEdited.connect(on_change)
         row.addWidget(edit, 1)

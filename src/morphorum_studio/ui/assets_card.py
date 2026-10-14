@@ -11,6 +11,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
+    QComboBox,
     QDoubleSpinBox,
     QFileDialog,
     QFrame,
@@ -67,6 +68,7 @@ class AssetsCard(QFrame):
         self._assets: tuple[Asset, ...] = ()
         self._soundtrack: Soundtrack | None = None
         self._locked = False
+        self._start = "prompt"
         self._build()
         service.assets_loaded.connect(self._loaded)
         service.preview_loaded.connect(self._preview)
@@ -112,6 +114,18 @@ class AssetsCard(QFrame):
         box.addLayout(row)
         self.source_note = _label("", "hint", wrap=True)
         box.addWidget(self.source_note)
+        start_row = QHBoxLayout()
+        start_row.setSpacing(8)
+        start_row.addWidget(_label("Start from", "fieldLabel"))
+        self.start_mode = QComboBox()
+        self.start_mode.addItem("The prompt (text to image)", "prompt")
+        self.start_mode.addItem("The source image (image to image)", "source")
+        self.start_mode.setAccessibleName("How the first frame starts")
+        start_row.addWidget(self.start_mode)
+        start_row.addStretch(1)
+        box.addLayout(start_row)
+        self.start_note = _label("", "hint", wrap=True)
+        box.addWidget(self.start_note)
 
         box.addWidget(_label("Soundtrack", "fieldLabel"))
         self.audio_text = _label(NA, "metricValue", wrap=True)
@@ -146,6 +160,7 @@ class AssetsCard(QFrame):
         self.audio_copy.clicked.connect(lambda: self._save_copy("soundtrack"))
         self.offset_apply.clicked.connect(self._apply_offset)
         self.offset.valueChanged.connect(lambda _v: self._update())
+        self.start_mode.activated.connect(self._start_mode_chosen)
 
     # -- state ------------------------------------------------------------------------------
 
@@ -169,6 +184,16 @@ class AssetsCard(QFrame):
             self._locked = locked
             self._update()
 
+    def set_start_mode(self, mode: str | None) -> None:
+        """The project's saved start mode (``prompt`` or ``source``)."""
+        self._start = "source" if mode == "source" else "prompt"
+        self._update()
+
+    def _start_mode_chosen(self, _index: int) -> None:
+        mode = self.start_mode.currentData()
+        if self._project and mode != self._start:
+            self._service.set_start_mode(self._project, mode)
+
     def _asset(self, kind: str) -> Asset | None:
         return next((a for a in self._assets if a.kind == kind), None)
 
@@ -182,6 +207,17 @@ class AssetsCard(QFrame):
         self.source_note.setText(
             "Save or revert your edits first: changing the source image updates the project." if self._locked
             else "PNG, JPEG, WebP or BMP up to 32 MiB. The backend stores it as PNG.")
+        self.start_mode.blockSignals(True)
+        self.start_mode.setCurrentIndex(self.start_mode.findData(self._start))
+        self.start_mode.blockSignals(False)
+        self.start_mode.setEnabled(ready and not self._locked)
+        self.start_mode.model().item(1).setEnabled(source is not None or self._start == "source")
+        self.start_note.setText(
+            "Image to image is selected but no source image is attached; attach one before rendering."
+            if self._start == "source" and source is None
+            else "Image to image starts frame 0 from the source image; strength controls how far it changes."
+            if self._start == "source"
+            else "Attach a source image to start from it instead of the prompt.")
         self.audio_choose.setEnabled(ready)
         self.audio_copy.setEnabled(ready and not self._service.copying and audio is not None)
         changed = (self._soundtrack is not None
@@ -240,7 +276,7 @@ class AssetsCard(QFrame):
         if project_id != self._project:
             return
         self._service.load_assets(project_id)
-        if operation in ("source_upload", "source_clear"):
+        if operation in ("source_upload", "source_clear", "start_mode"):
             self.project_changed.emit()
         self._update()
 

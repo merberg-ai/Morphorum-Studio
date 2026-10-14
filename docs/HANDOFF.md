@@ -200,3 +200,6 @@ See docs/S4_2_KEYFRAMES.md. From dev-ui (S4.1 merged). Set/update/delete/move ke
 
 ## S4.3 validation + Deforum import (branch feature/studio-s4-3-import-validation)
 See docs/S4_3_IMPORT_VALIDATION.md. From dev-ui (S4.2 merged). Backend schedule validation shown in the Editor and used as a render pre-flight; Deforum settings preview/create as a new project. Awaiting CI and a physical Windows test.
+
+## S4.4 project setup (branch feature/studio-s4-4-project-setup)
+See docs/S4_4_PROJECT_SETUP.md. From dev-ui (S4.3 merged). New-project wizard (backend template, local + backend review before create, never writes camera values), prompt/source start-mode selector on the media card (conditional PUT of animation.start_mode), read-only Models and LoRAs browser with LoRA inspection. Awaiting CI and a physical Windows test.

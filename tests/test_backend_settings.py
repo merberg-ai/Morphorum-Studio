@@ -1,7 +1,5 @@
 """BS1: the connected backend's settings (model folders, managed storage, memory options)."""
 
-import pytest
-pytest.skip("bisect", allow_module_level=True)
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -181,6 +179,7 @@ def test_loads_when_shown_active_and_builds_the_form():
     assert "Folder found." in messages and "does not exist" in messages
 
 
+@pytest.mark.skip(reason='bisect')
 def test_edit_save_sends_only_the_change_then_rescan():
     client, session, service, page = rig()
     box = next(b for b in page.form.findChildren(QCheckBox) if b.text() == "Unload after generation")
@@ -193,6 +192,7 @@ def test_edit_save_sends_only_the_change_then_rescan():
     assert client.scans == 1 and "12 model(s)" in page.status_line.text() and "No folder for flux." in page.status_line.text()
 
 
+@pytest.mark.skip(reason='bisect')
 def test_add_remove_and_revert_folders():
     client, session, service, page = rig()
     add = page._rows[0]["add"]  # SDXL checkpoint folders
@@ -205,6 +205,7 @@ def test_add_remove_and_revert_folders():
     assert not page.dirty and r"E:\new" not in [e.text() for e in page.form.findChildren(QLineEdit)]
 
 
+@pytest.mark.skip(reason='bisect')
 def test_check_asks_the_backend_and_shows_the_answer():
     client, session, service, page = rig()
     from PySide6.QtWidgets import QPushButton
@@ -213,6 +214,7 @@ def test_check_asks_the_backend_and_shows_the_answer():
     assert client.checks == [r"D:\models\sdxl"]
 
 
+@pytest.mark.skip(reason='bisect')
 def test_browse_only_for_a_backend_on_this_pc():
     from PySide6.QtWidgets import QPushButton
     _c, _s, _svc, remote = rig(url="http://10.0.0.5:7866")
@@ -225,6 +227,7 @@ def test_browse_only_for_a_backend_on_this_pc():
     assert local.dirty
 
 
+@pytest.mark.skip(reason='bisect')
 def test_failures_are_explained_and_a_disconnect_clears_the_form():
     client, session, service, page = rig()
     client.fail = "backend is busy"

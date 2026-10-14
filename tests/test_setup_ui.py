@@ -6,7 +6,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from fakes import info
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from morphorum_studio.backend.client import BackendError
 from morphorum_studio.backend.session import BackendSession
@@ -30,6 +30,9 @@ class Backend:
         self.calls = []
         self.issues = []
         self.fail = {}
+        self.civitai = {"found": True, "confidence": "exact SHA-256 file match",
+                        "url": "https://civitai.com/models/5", "model_name": "Fox",
+                        "creator": "someone", "trained_words": ["foxstyle"]}
 
 
 class Client:
@@ -56,6 +59,10 @@ class Client:
         if path.endswith("/validate-schedules"):
             return {"valid": not any(i["severity"] == "error" for i in self.b.issues),
                     "issues": self.b.issues}, None
+        if path.endswith("/civitai-lookup"):
+            if "lookup" in self.b.fail:
+                raise self.b.fail["lookup"]
+            return self.b.civitai, None
         if "create" in self.b.fail:
             raise self.b.fail["create"]
         return {"status": "created", "project": {"id": "my-film-1", "name": body["name"]}}, None
@@ -233,3 +240,53 @@ def test_describe_lora_without_triggers():
     from morphorum_studio.backend.loras import LoraDetail
     text = describe_lora(LoraDetail(id="a", name="Plain", family="flux"))
     assert "No trigger words recorded." in text and "Family: flux" in text
+
+
+def ask(monkeypatch, answer):
+    asked = []
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: asked.append(a[1]) or answer)
+    return asked
+
+
+def test_civitai_lookup_needs_consent_and_adds_to_the_detail(monkeypatch):
+    backend, _, _, models = make()
+    dialog = ModelsDialog(models)
+    assert not dialog.lookup_button.isEnabled()
+    dialog.lora_list.setCurrentRow(0)
+    assert dialog.lookup_button.isEnabled() and not dialog.open_button.isEnabled()
+    asked = ask(monkeypatch, QMessageBox.StandardButton.No)
+    dialog.lookup_button.click()
+    assert asked and not [c for c in backend.calls if c[0] == "POST"]  # declined: nothing sent
+    ask(monkeypatch, QMessageBox.StandardButton.Yes)
+    dialog.lookup_button.click()
+    assert [c[1] for c in backend.calls if c[0] == "POST"] == ["/api/loras/l1/civitai-lookup"]
+    text = dialog.detail.toPlainText()
+    assert "Civitai" in text and "foxstyle" in text and "foxstyle" in text.split("Civitai")[1]
+    assert "16 × 480" in text  # the file's own details are still shown
+    assert dialog.open_button.isEnabled() and dialog.lookup_note.text() == "Found on Civitai."
+
+
+def test_civitai_miss_and_failure_are_reported(monkeypatch):
+    backend, _, _, models = make()
+    dialog = ModelsDialog(models)
+    dialog.lora_list.setCurrentRow(0)
+    ask(monkeypatch, QMessageBox.StandardButton.Yes)
+    backend.civitai = {"found": False, "message": "No matching Civitai version found"}
+    dialog.lookup_button.click()
+    assert "No matching Civitai version" in dialog.detail.toPlainText() and not dialog.open_button.isEnabled()
+    backend.fail["lookup"] = BackendError("VALIDATION_ERROR", "LoRA file no longer exists", 400)
+    dialog.lookup_button.click()
+    assert "no longer exists" in dialog.lookup_note.text()
+
+
+def test_civitai_answer_is_remembered_per_lora(monkeypatch):
+    backend, _, _, models = make()
+    dialog = ModelsDialog(models)
+    dialog.lora_list.setCurrentRow(0)
+    ask(monkeypatch, QMessageBox.StandardButton.Yes)
+    dialog.lookup_button.click()
+    dialog.lora_list.setCurrentRow(1)
+    assert "Civitai" not in dialog.detail.toPlainText()
+    dialog.lora_list.setCurrentRow(0)
+    assert "Civitai" in dialog.detail.toPlainText()
+    assert len([c for c in backend.calls if c[0] == "POST"]) == 1  # no second lookup

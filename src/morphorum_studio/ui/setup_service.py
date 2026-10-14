@@ -106,8 +106,11 @@ class ModelsService(_Service):
     """Read-only checkpoint and LoRA listing plus LoRA inspection."""
 
     feature = "model_discovery"
+    _looking = False
     library_ready = Signal(object, object)  # tuple[ModelEntry] checkpoints, tuple[ModelEntry] loras
     inspected = Signal(object)  # LoraDetail
+    civitai_ready = Signal(str, object)  # model id, CivitaiMatch
+    lookup_busy = Signal(bool)
 
     def load(self) -> None:
         def work(c: BackendClient):
@@ -117,3 +120,34 @@ class ModelsService(_Service):
 
     def inspect(self, model_id: str) -> None:
         self._go("inspect", lambda c: LoraApi(c).inspect(model_id), self.inspected, 30.0, busy=False)
+
+    def lookup(self, model_id: str) -> None:
+        """Civitai lookup (hashing a large file can take a while). Tracked apart from browsing so
+        selecting another LoRA while it runs does not discard the answer."""
+        client = self._session.client(timeout=60.0) if self.available else None
+        if client is None or self._looking:
+            return
+        self._looking = True
+        epoch = self._session.epoch
+        self.lookup_busy.emit(True)
+
+        def done(result, error):
+            if epoch != self._session.epoch or self._session.state == "offline":
+                return
+            self._looking = False
+            self.lookup_busy.emit(False)
+            if error:
+                self.failed.emit("lookup", *error)
+            else:
+                self.civitai_ready.emit(model_id, result)
+
+        self._run(client, lambda c: LoraApi(c).civitai(model_id), done)
+
+    @property
+    def looking(self) -> bool:
+        return self._looking
+
+    def _session_changed(self) -> None:
+        if self._session.epoch != self._epoch:
+            self._looking = False
+        super()._session_changed()

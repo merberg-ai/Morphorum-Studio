@@ -29,13 +29,20 @@ schedule (Editor → generation tracks) controls how far frames move from the so
 ## Models and LoRAs browser
 **Projects → Models and LoRAs…** lists the backend's indexed checkpoints and LoRAs, with a family
 filter and search. Selecting a LoRA inspects it: family, format, base model, tensor count, ranks,
-trigger words and any warnings. It is read-only: no online lookups and no usage records are
-written, and server file paths are never shown or kept. Add files in the backend's model folders
+trigger words and any warnings. Browsing is read-only: no usage records are written, and server file
+paths are never shown or kept.
+
+**Look up on Civitai…** is optional and asks first: the backend hashes the LoRA file and sends only
+that SHA-256 to civitai.com (no file contents, paths or prompts). A match adds the model and version
+name, creator, base model, trained words, description and how it matched (exact hash, or the
+sidecar version id which is not hash-verified) to the details, and **Open Civitai page** opens it in
+your browser (only civitai.com links are ever opened). No match is reported plainly. Answers are
+kept for the session per LoRA, so one lookup is one request. Add files in the backend's model folders
 and use Refresh.
 
 ## Not in S4.4
 - Applying a LoRA inside a project's timeline (the LoRA track group is still reserved) and the
-  Civitai lookup / runtime audit tools.
+  runtime audit tool.
 - Layout save/restore, keyboard shortcuts, undo shortcuts and help tooltips: left for the UI pass.
 
 ## Windows acceptance checklist
@@ -51,4 +58,6 @@ and use Refresh.
 7. Switch it back to the prompt. With no source image attached the source option is greyed out.
 8. Models and LoRAs…: checkpoints and LoRAs listed; filter to one family; select a LoRA and check the
    trigger words and warnings against the Web UI's LoRA manager.
-9. Disconnect while the browser is open: it clears and tells you to refresh.
+9. Select a LoRA, Look up on Civitai…: decline once (nothing happens), accept once: the match, trigger
+   words and page link appear; Open Civitai page opens the right model.
+10. Disconnect while the browser is open: it clears and tells you to refresh.

@@ -80,6 +80,41 @@ def parse_lora_detail(model_id: str, payload: Any) -> LoraDetail:
     )
 
 
+@dataclass(frozen=True)
+class CivitaiMatch:
+    found: bool
+    message: str = ""
+    confidence: str | None = None
+    url: str | None = None
+    model_name: str | None = None
+    version_name: str | None = None
+    creator: str | None = None
+    base_model: str | None = None
+    kind: str | None = None
+    trained_words: tuple[str, ...] = ()
+    description: str | None = None
+    sha256: str | None = None
+
+
+CIVITAI_PREFIX = "https://civitai.com/"
+
+
+def parse_civitai(payload: Any) -> CivitaiMatch:
+    data = _object(payload, "Civitai lookup")
+    sha = _text(data.get("sha256"), 64)
+    if data.get("found") is not True:
+        return CivitaiMatch(False, message=_text(data.get("message"), 300)
+                            or "No matching Civitai version was found.", sha256=sha)
+    url = _text(data.get("url"), 300)
+    return CivitaiMatch(
+        True, confidence=_text(data.get("confidence"), 80),
+        url=url if url and url.startswith(CIVITAI_PREFIX) else None,  # only ever link to Civitai
+        model_name=_text(data.get("model_name"), 200), version_name=_text(data.get("version_name"), 200),
+        creator=_text(data.get("creator"), 120), base_model=_text(data.get("base_model"), 200),
+        kind=_text(data.get("type"), 100), trained_words=_texts(data.get("trained_words"), MAX_WORDS, 120),
+        description=_text(data.get("description_text"), 2000), sha256=sha)
+
+
 class LoraApi:
     def __init__(self, client: BackendClient) -> None:
         self._client = client
@@ -92,3 +127,10 @@ class LoraApi:
             raise BackendError("INVALID_REQUEST", "Not a valid model id")
         payload = self._client.get_json(f"/api/loras/{model_id}/inspect")
         return parse_lora_detail(model_id, payload)
+
+    def civitai(self, model_id: str) -> CivitaiMatch:
+        """Explicit, opt-in lookup: the backend sends the file's SHA-256 (nothing else) to Civitai."""
+        if not isinstance(model_id, str) or MODEL_ID.fullmatch(model_id) is None:
+            raise BackendError("INVALID_REQUEST", "Not a valid model id")
+        payload, _ = self._client.send_json("POST", f"/api/loras/{model_id}/civitai-lookup")
+        return parse_civitai(payload)

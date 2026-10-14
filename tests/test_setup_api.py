@@ -5,7 +5,7 @@ import pytest
 from test_backend_client import FakeOpener, FakeResponse
 
 from morphorum_studio.backend.client import BackendClient, BackendError
-from morphorum_studio.backend.loras import LoraApi, parse_lora_detail
+from morphorum_studio.backend.loras import LoraApi, parse_civitai, parse_lora_detail
 from morphorum_studio.backend.projects import ProjectsApi
 from morphorum_studio.backend.setup import (
     Choices, SetupApi, apply_choices, check_choices, has_errors,
@@ -149,3 +149,34 @@ def test_start_mode_reads_the_revision_then_puts_a_conditional_partial():
     assert json.loads(put.data) == {"animation": {"start_mode": "source"}}
     with pytest.raises(ValueError):
         ProjectsApi(client()[0]).set_start_mode("demo", "video")
+
+
+FOUND = {"found": True, "source": "sha256", "confidence": "exact SHA-256 file match", "sha256": "a" * 64,
+         "url": "https://civitai.com/models/5?modelVersionId=9", "model_name": "Fox\x00Style",
+         "version_name": "v2", "creator": "someone", "base_model": "SDXL 1.0", "type": "LORA",
+         "trained_words": ["foxstyle", 3], "description_text": "A style."}
+
+
+def test_parse_civitai_match_and_miss():
+    m = parse_civitai(FOUND)
+    assert m.found and m.model_name == "Fox Style" and m.trained_words == ("foxstyle",)
+    assert m.url == "https://civitai.com/models/5?modelVersionId=9" and m.confidence.startswith("exact")
+    miss = parse_civitai({"found": False, "sha256": "b" * 64, "message": "No match"})
+    assert not miss.found and miss.message == "No match" and miss.url is None
+    assert not parse_civitai({"found": "yes"}).found
+    with pytest.raises(BackendError):
+        parse_civitai([])
+
+
+def test_civitai_url_is_only_kept_for_civitai():
+    assert parse_civitai({**FOUND, "url": "https://evil.example/x"}).url is None
+    assert parse_civitai({**FOUND, "url": "http://civitai.com/x"}).url is None
+
+
+def test_civitai_lookup_is_one_explicit_post_by_indexed_id():
+    c, opener = client(FakeResponse(FOUND))
+    assert LoraApi(c).civitai("0123abcd").found
+    req = opener.requests[0][0]
+    assert req.get_method() == "POST" and req.full_url.endswith("/api/loras/0123abcd/civitai-lookup")
+    with pytest.raises(BackendError):
+        LoraApi(client()[0]).civitai("../x")

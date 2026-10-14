@@ -200,6 +200,22 @@ class ModelsDialog(QDialog):
         self._fill_loras()
         self._update()
 
+    def select_lora(self, model_id: str) -> None:
+        """Select (and so inspect) a LoRA by id; applied once the list has loaded if needed."""
+        self._pending_select = model_id
+        self._apply_pending_select()
+
+    def _apply_pending_select(self) -> None:
+        wanted = getattr(self, "_pending_select", None)
+        if not wanted:
+            return
+        for row in range(self.lora_list.count()):
+            if self.lora_list.item(row).data(Qt.ItemDataRole.UserRole) == wanted:
+                self._pending_select = None
+                self.family.setCurrentIndex(0)
+                self.lora_list.setCurrentRow(row)
+                return
+
     def _fill_loras(self) -> None:
         family, text = self.family.currentData(), self.search.text().strip().lower()
         self.lora_list.clear()

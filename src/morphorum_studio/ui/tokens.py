@@ -241,6 +241,26 @@ QLabel#footerText {
     font-size: 11px;
 }
 
+/* ---------- segmented tabs (Library) ---------- */
+QPushButton#segButton {
+    min-height: 0px;
+    padding: 6px 16px;
+    border-radius: 14px;
+    border: 1px solid $line2;
+    background: transparent;
+    color: $dim;
+    font-weight: 500;
+}
+QPushButton#segButton:hover {
+    background: $raised;
+    color: $text;
+}
+QPushButton#segButton:checked {
+    background: rgba(79, 125, 255, 46);
+    border-color: rgba(79, 125, 255, 120);
+    color: $text;
+}
+
 /* ---------- command palette ---------- */
 QDialog#palette {
     background: $panel;

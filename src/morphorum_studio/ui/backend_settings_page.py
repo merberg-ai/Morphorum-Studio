@@ -164,10 +164,7 @@ class BackendSettingsPage(QWidget):
         draft = self.draft
         if draft is None:
             return
-        for family in draft.families:
-            for kind, folders in draft.paths.get(family.id, {}).items():
-                self._folder_card(family.id, f"{family.label} {KIND_TITLE.get(kind, kind)}", kind, folders)
-        managed = [f for f in draft.families if f.managed]
+        managed = []
         if managed:
             _card, box = self._card(
                 "Managed model storage",

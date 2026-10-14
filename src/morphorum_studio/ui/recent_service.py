@@ -70,8 +70,11 @@ class RecentProjectsService(QObject):
     cleared = Signal()
 
     def __init__(self, session: BackendSession, parent: QObject | None = None,
-                 runner: Runner | None = None) -> None:
+                 runner: Runner | None = None, count: int = RECENT_COUNT,
+                 refresh_ms: int = REFRESH_MS) -> None:
         super().__init__(parent)
+        self._count = count
+        self._refresh_ms = refresh_ms
         self._session = session
         self._run = runner or thread_pool_runner(self)
         self._epoch = session.epoch
@@ -111,9 +114,10 @@ class RecentProjectsService(QObject):
         self._inflight = True
         epoch = self._session.epoch
         have = dict(self._thumbs)
+        count = self._count
 
         def work(c: BackendClient) -> Any:
-            return load_recent(c, have)
+            return load_recent(c, have, count)
 
         self._run(client, work, lambda result, error: self._done(epoch, result, error))
 
@@ -131,7 +135,7 @@ class RecentProjectsService(QObject):
             self._last = items
             self.updated.emit(items)
         if self._active and self._session.state == "connected":
-            self._timer.start(REFRESH_MS)
+            self._timer.start(self._refresh_ms)
 
     def _session_changed(self) -> None:
         if self._session.epoch != self._epoch:
@@ -147,11 +151,12 @@ class RecentProjectsService(QObject):
             self._timer.stop()
 
 
-def load_recent(client: BackendClient, have: dict[tuple[str, str, int], bytes]):
+def load_recent(client: BackendClient, have: dict[tuple[str, str, int], bytes],
+                count: int = RECENT_COUNT):
     """Runs on a worker thread. Returns (items, newly downloaded thumbnails).
 
     One project's failure never hides the others: its tile just shows no status or thumbnail."""
-    projects = recent_first(ProjectsApi(client).list_projects())
+    projects = recent_first(ProjectsApi(client).list_projects(), count)
     renders_api = RenderApi(client)
     api = ProjectsApi(client)
     items: list[RecentProject] = []

@@ -202,6 +202,8 @@ class StudioMainWindow(QMainWindow):
         self.setup_service = SetupService(self.session, self)
         self.models_service = ModelsService(self.session, self)
         self.recent_service = RecentProjectsService(self.session, self)
+        self.library_service = RecentProjectsService(
+            self.session, self, count=24, refresh_ms=30000)
         self.pages = QStackedWidget()
         self.pages.setObjectName("pages")
         for page_name, title, description in PAGES:
@@ -221,7 +223,7 @@ class StudioMainWindow(QMainWindow):
                 self.projects_page = ProjectsPage(
                     self.session, self.projects_service, self.preferences, self.render_service,
                     self.video_service, self.import_service,
-                    self.setup_service, self.models_service,
+                    self.setup_service, self.models_service, self.library_service,
                 )
                 self.projects_page.open_connections.connect(
                     self._show_connections

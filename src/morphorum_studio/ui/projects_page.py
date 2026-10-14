@@ -41,6 +41,7 @@ from morphorum_studio.backend.projects import (
 )
 from morphorum_studio.backend.session import BackendSession
 from morphorum_studio.ui.assets_card import AssetsCard
+from morphorum_studio.ui.library_views import ModelGrid, ProjectGrid
 from morphorum_studio.ui.preferences import StudioPreferences
 from morphorum_studio.ui.render_card import RenderCard
 from morphorum_studio.ui.projects_service import ProjectsService
@@ -93,8 +94,10 @@ class ProjectsPage(QFrame):
 
     def __init__(self, session: BackendSession, service: ProjectsService,
                  preferences: StudioPreferences, render_service=None, video_service=None,
-                 import_service=None, setup_service=None, models_service=None) -> None:
+                 import_service=None, setup_service=None, models_service=None,
+                 library_service=None) -> None:
         super().__init__()
+        self._library_service = library_service
         self._render_service = render_service
         self._video_service = video_service
         self._import_service = import_service
@@ -111,6 +114,7 @@ class ProjectsPage(QFrame):
         self._etag: str | None = None
         self._conflict_for: str | None = None
         self._restore_pending = True  # Reopen the last project once per connection.
+        self._models_loaded = False
         self._build()
         session.changed.connect(self._session_changed)
         service.cleared.connect(self._cleared)
@@ -130,14 +134,76 @@ class ProjectsPage(QFrame):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(38, 34, 38, 24)
         outer.setSpacing(12)
-        outer.addWidget(_label("PROJECTS / STUDIO", "sectionCaption"))
-        outer.addWidget(_label("Projects", "pageHeading"))
+        outer.addWidget(_label("LIBRARY / STUDIO", "sectionCaption"))
+        heading = QHBoxLayout()
+        heading.addWidget(_label("Library", "pageHeading"))
+        heading.addStretch(1)
+        self.back_button = QPushButton("‹ All projects")
+        self.back_button.setToolTip("Back to the project grid")
+        self.back_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.back_button.setVisible(False)
+        heading.addWidget(self.back_button)
+        outer.addLayout(heading)
         self.status_line = _label("", "pageDescription", wrap=True)
         outer.addWidget(self.status_line)
 
-        body = QHBoxLayout()
+        tabs = QHBoxLayout()
+        tabs.setSpacing(6)
+        self.tab_buttons: dict[str, QPushButton] = {}
+        for key, text in (("projects", "Projects"), ("models", "Models"), ("loras", "LoRAs")):
+            button = QPushButton(text)
+            button.setObjectName("segButton")
+            button.setCheckable(True)
+            button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            button.clicked.connect(lambda _checked=False, k=key: self.show_tab(k))
+            tabs.addWidget(button)
+            self.tab_buttons[key] = button
+        tabs.addStretch(1)
+        self.tab_buttons["projects"].setChecked(True)
+        outer.addLayout(tabs)
+
+        self.library_stack = QStackedWidget()
+        outer.addWidget(self.library_stack, 1)
+        self.projects_stack = QStackedWidget()  # 0: grid, 1: the project detail view
+        self.library_stack.addWidget(self.projects_stack)
+
+        # -- grid of projects
+        grid_view = QWidget()
+        gbox = QVBoxLayout(grid_view)
+        gbox.setContentsMargins(0, 0, 0, 0)
+        gbox.setSpacing(10)
+        gbar = QHBoxLayout()
+        gbar.setSpacing(8)
+        self.grid_new_button = QPushButton("New project")
+        self.grid_new_button.setObjectName("primaryAction")
+        self.grid_import_button = QPushButton("Import Deforum…")
+        self.grid_refresh_button = QPushButton("Refresh")
+        for button in (self.grid_new_button, self.grid_import_button, self.grid_refresh_button):
+            button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.grid_search = QLineEdit()
+        self.grid_search.setPlaceholderText("Search projects")
+        self.grid_search.setClearButtonEnabled(True)
+        self.grid_search.setAccessibleName("Search project grid")
+        gbar.addWidget(self.grid_new_button)
+        gbar.addWidget(self.grid_import_button)
+        gbar.addWidget(self.grid_search, 1)
+        gbar.addWidget(self.grid_refresh_button)
+        gbox.addLayout(gbar)
+        self.project_grid = ProjectGrid()
+        gbox.addWidget(self.project_grid, 1)
+        self.projects_stack.addWidget(grid_view)
+
+        detail_view = QWidget()
+        body = QHBoxLayout(detail_view)
+        body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(16)
-        outer.addLayout(body, 1)
+        self.projects_stack.addWidget(detail_view)
+
+        # -- models and LoRAs (read-only; LoRAs open the inspector)
+        self.model_grid = ModelGrid("Models", inspectable=False)
+        self.lora_grid = ModelGrid("LoRAs", inspectable=True)
+        self.library_stack.addWidget(self.model_grid)
+        self.library_stack.addWidget(self.lora_grid)
 
         # -- left: list
         left = QFrame()
@@ -293,10 +359,28 @@ class ProjectsPage(QFrame):
         dbox.addStretch(1)
         self.detail_stack.addWidget(scroll)
 
+        self.back_button.clicked.connect(self.show_grid)
+        self.project_grid.opened.connect(self._grid_opened)
+        self.grid_search.textChanged.connect(self.project_grid.apply_filter)
+        self.grid_new_button.clicked.connect(lambda *_: self.new_button.click())
+        self.grid_import_button.clicked.connect(lambda *_: self.import_button.click())
+        self.grid_refresh_button.clicked.connect(lambda *_: self.refresh_button.click())
+        self.grid_import_button.setVisible(self._import_service is not None)
+        self.lora_grid.inspect_requested.connect(self._inspect_lora)
+        if self._library_service is not None:
+            self._library_service.updated.connect(self._grid_updated)
+            self._library_service.failed.connect(
+                lambda code: self.project_grid.show_message(f"Could not load project previews ({code}). Retrying."))
+            self._library_service.cleared.connect(lambda: self.project_grid.show_message(""))
+        if self._models_service is not None:
+            self._models_service.library_ready.connect(self._models_ready)
+            self._models_service.cleared.connect(self._models_cleared)
         self.search.textChanged.connect(self._apply_filter)
         self.project_list.currentItemChanged.connect(self._item_changed)
         self.recent_combo.activated.connect(self._recent_chosen)
         self.refresh_button.clicked.connect(self._service.refresh)
+        self.refresh_button.clicked.connect(
+            lambda *_: self._library_service.refresh() if self._library_service is not None else None)
         self.new_button.clicked.connect(self._new_project)
         self.import_button.clicked.connect(self._import_deforum)
         self.models_button.clicked.connect(self._open_models)
@@ -316,8 +400,67 @@ class ProjectsPage(QFrame):
 
     def set_active(self, active: bool) -> None:
         self._active = active
+        if self._library_service is not None:
+            self._library_service.set_active(active)
         if active and self._service.available:
             self._service.refresh()
+        if active and self._current_tab() != "projects":
+            self._load_models_if_needed()
+
+    # -- library tabs and grid ------------------------------------------------------------
+
+    def _current_tab(self) -> str:
+        return next((k for k, b in self.tab_buttons.items() if b.isChecked()), "projects")
+
+    def show_tab(self, key: str) -> None:
+        for name, button in self.tab_buttons.items():
+            button.setChecked(name == key)
+        self.library_stack.setCurrentIndex({"projects": 0, "models": 1, "loras": 2}[key])
+        self.back_button.setVisible(key == "projects" and self.projects_stack.currentIndex() == 1)
+        if key != "projects":
+            self._load_models_if_needed()
+
+    def show_grid(self) -> None:
+        self.projects_stack.setCurrentIndex(0)
+        self.back_button.setVisible(False)
+
+    def show_detail(self) -> None:
+        self.show_tab("projects")
+        self.projects_stack.setCurrentIndex(1)
+        self.back_button.setVisible(True)
+
+    def _grid_opened(self, project_id: str) -> None:
+        self._select(project_id)
+        if self._selected == project_id:  # not refused by the unsaved-changes prompt
+            self.show_detail()
+
+    def _grid_updated(self, items) -> None:
+        self.project_grid.set_items(items, self.grid_search.text())
+
+    def _load_models_if_needed(self) -> None:
+        service = self._models_service
+        if service is None or not service.available:
+            for grid in (self.model_grid, self.lora_grid):
+                grid.show_message("Connect to a backend with model discovery to list models.")
+            return
+        if not self._models_loaded:
+            service.load()
+
+    def _models_ready(self, checkpoints, loras) -> None:
+        self._models_loaded = True
+        self.model_grid.set_entries(checkpoints)
+        self.lora_grid.set_entries(loras)
+
+    def _models_cleared(self) -> None:
+        self._models_loaded = False
+        for grid in (self.model_grid, self.lora_grid):
+            grid.show_message("")
+
+    def _inspect_lora(self, model_id: str) -> None:
+        self._open_models()
+        dialog = getattr(self, "models_dialog", None)
+        if dialog is not None:
+            dialog.select_lora(model_id)
 
     @property
     def profile_id(self) -> str | None:
@@ -351,6 +494,7 @@ class ProjectsPage(QFrame):
             text = "The connected backend does not advertise project support."
         self.status_line.setText(text)
         self.list_note.setText(text)
+        self.project_grid.show_message(text)
         self.connect_button.setVisible(True)
 
     def _cleared(self) -> None:
@@ -369,6 +513,7 @@ class ProjectsPage(QFrame):
         self._cards_project(None)
         self.detail_stack.setCurrentIndex(0)
         self.empty_detail.setText("")
+        self.show_grid()
 
     # -- list ---------------------------------------------------------------------------
 
@@ -444,6 +589,8 @@ class ProjectsPage(QFrame):
     def open_project(self, project_id: str) -> None:
         """Open a project by id (used by Home tiles); asks before discarding unsaved edits."""
         self._select(project_id)
+        if self._selected == project_id:
+            self.show_detail()
 
     def _select(self, project_id: str, from_list: bool = False) -> None:
         if project_id == self._selected and self._loaded is not None:
@@ -632,13 +779,19 @@ class ProjectsPage(QFrame):
         self._loaded = None
         self._selected = None
         self._service.refresh()
+        if self._library_service is not None:
+            self._library_service.refresh()
         self._select(project_id)
+        self.show_detail()
 
     def _created(self, detail: ProjectDetail) -> None:
         self._loaded = None  # Anything unsaved was already discarded when the user chose New.
         self._selected = None
         self._service.refresh()
+        if self._library_service is not None:
+            self._library_service.refresh()
         self._select(detail.id)
+        self.show_detail()
 
     def _trash(self) -> None:
         if self._loaded is None:
@@ -662,6 +815,9 @@ class ProjectsPage(QFrame):
             self._cards_project(None)
             self.detail_stack.setCurrentIndex(0)
             self.empty_detail.setText("Project moved to the backend's Trash.")
+            self.show_grid()
+        if self._library_service is not None:
+            self._library_service.refresh()
         self._service.refresh()
 
     # -- errors ---------------------------------------------------------------------------

@@ -95,7 +95,7 @@ class EditorPage(QWidget):
         page_scroll.setWidgetResizable(True)
         page_scroll.setFrameShape(QFrame.Shape.NoFrame)
         body = QWidget()
-        body.setMinimumSize(720, 540)
+        body.setMinimumSize(720, 500)
         page_scroll.setWidget(body)
         box.addWidget(page_scroll, 1)
         box = QVBoxLayout(body)
@@ -127,8 +127,8 @@ class EditorPage(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setWidget(self.view)
-        scroll.setMinimumHeight(200)
-        box.addWidget(scroll, 3)
+        scroll.setMinimumHeight(170)
+        box.addWidget(scroll, 1)
 
         lower = QHBoxLayout()
         lower.setSpacing(14)
@@ -205,7 +205,7 @@ class EditorPage(QWidget):
         self.edit_status = _label("", "hint", wrap=True)
         right.addWidget(self.edit_status)
         lower.addLayout(right, 1)
-        box.addLayout(lower, 2)
+        box.addLayout(lower, 3)
         box.addWidget(_label("Values and curves are evaluated by the backend. Each edit is saved to the "
                              "backend immediately and can be undone here.", "hint", wrap=True))
 

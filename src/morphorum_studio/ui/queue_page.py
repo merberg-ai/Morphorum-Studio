@@ -114,6 +114,7 @@ class QueuePage(QFrame):
         self._service = service
         self._mode = "all"
         self._entries: tuple[QueueEntry, ...] | None = None
+        self._error = ""  # a refused cancel/resume; survives the refresh that follows it
         self.rows: list[QueueRow] = []
         self._build()
         service.updated.connect(self._updated)
@@ -178,6 +179,7 @@ class QueuePage(QFrame):
 
     def set_filter(self, mode: str) -> None:
         self._mode = mode
+        self._error = ""
         for key, button in self.filter_buttons.items():
             button.setChecked(key == mode)
         self._fill()
@@ -198,14 +200,16 @@ class QueuePage(QFrame):
         shown = [e for e in entries if keep(e, self._mode)]
         for position, entry in enumerate(shown):
             row = QueueRow(entry)
-            row.cancel_clicked.connect(self._service.cancel)
-            row.resume_clicked.connect(self._service.resume)
+            row.cancel_clicked.connect(lambda e: self._act(self._service.cancel, e))
+            row.resume_clicked.connect(lambda e: self._act(self._service.resume, e))
             row.open_clicked.connect(self._open)
             self.list_box.insertWidget(position, row)
             row.show()  # rows may be added while this page is hidden
             self.rows.append(row)
         self.summary.setText(summary_text(entries) if self._entries is not None else "")
-        if self._entries is None:
+        if self._error:
+            self.note.setText(self._error)
+        elif self._entries is None:
             self.note.setText("Loading…" if self._service.available else "")
         elif not shown:
             self.note.setText("Nothing here yet. Jobs from the Lab and renders from the Timeline appear here."
@@ -213,6 +217,10 @@ class QueuePage(QFrame):
         else:
             self.note.setText("")
         self.note.setVisible(bool(self.note.text()))
+
+    def _act(self, action, entry: QueueEntry) -> None:
+        self._error = ""
+        action(entry)
 
     def _open(self, entry: QueueEntry) -> None:
         if entry.kind == "render" and entry.project_id:
@@ -225,11 +233,12 @@ class QueuePage(QFrame):
         self.note.setVisible(True)
 
     def _action_failed(self, message: str) -> None:
-        self.note.setText(message)
-        self.note.setVisible(True)
+        self._error = message
+        self._fill()
 
     def _cleared(self) -> None:
         self._entries = None
+        self._error = ""
         self._fill()
 
     def _session_changed(self) -> None:

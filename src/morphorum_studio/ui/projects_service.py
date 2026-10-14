@@ -152,6 +152,12 @@ class ProjectsService(QObject):
     def save(self, project_id: str, etag: str, name: str, notes: str) -> None:
         self._mutate("save", lambda c: ProjectsApi(c).save(project_id, etag, name, notes))
 
+    def set_start_mode(self, project_id: str, mode: str) -> None:
+        def work(c: BackendClient):
+            ProjectsApi(c).set_start_mode(project_id, mode)
+            return "start_mode", project_id, None
+        self._mutate("start_mode", work)
+
     def trash(self, project_id: str) -> None:
         self._mutate("trash", lambda c: (ProjectsApi(c).trash(project_id), project_id)[1])
 

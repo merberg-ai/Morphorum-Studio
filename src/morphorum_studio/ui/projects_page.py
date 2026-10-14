@@ -93,11 +93,13 @@ class ProjectsPage(QFrame):
 
     def __init__(self, session: BackendSession, service: ProjectsService,
                  preferences: StudioPreferences, render_service=None, video_service=None,
-                 import_service=None) -> None:
+                 import_service=None, setup_service=None, models_service=None) -> None:
         super().__init__()
         self._render_service = render_service
         self._video_service = video_service
         self._import_service = import_service
+        self._setup_service = setup_service
+        self._models_service = models_service
         self.setObjectName("pageSurface")
         self._session = session
         self._service = service
@@ -158,6 +160,10 @@ class ProjectsPage(QFrame):
         head.addStretch(1)
         head.addWidget(self.refresh_button)
         lbox.addLayout(head)
+        self.models_button = QPushButton("Models and LoRAs…")
+        self.models_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.models_button.setVisible(self._models_service is not None)
+        lbox.addWidget(self.models_button)
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search projects")
         self.search.setClearButtonEnabled(True)
@@ -286,6 +292,7 @@ class ProjectsPage(QFrame):
         self.refresh_button.clicked.connect(self._service.refresh)
         self.new_button.clicked.connect(self._new_project)
         self.import_button.clicked.connect(self._import_deforum)
+        self.models_button.clicked.connect(self._open_models)
         self.connect_button.clicked.connect(self.open_connections)
         self.name_edit.textChanged.connect(self._edited)
         self.notes_edit.textChanged.connect(self._edited)
@@ -467,6 +474,7 @@ class ProjectsPage(QFrame):
         for edit in (self.name_edit, self.notes_edit):
             edit.blockSignals(False)
         self.id_label.setText("ID: " + detail.id)
+        self.assets_card.set_start_mode(detail.start_mode)
         info = self._info
         info["Frame size"].setText(format_size(detail.width, detail.height))
         info["Length"].setText(format_length(detail.max_frames, detail.fps))
@@ -522,6 +530,7 @@ class ProjectsPage(QFrame):
         has_project = self._loaded is not None
         self.new_button.setEnabled(available and not busy)
         self.import_button.setEnabled(available and not busy)
+        self.models_button.setEnabled(available)
         self.refresh_button.setEnabled(available)
         self.save_button.setEnabled(available and not busy and dirty and valid)
         self.revert_button.setEnabled(dirty and not busy)
@@ -573,10 +582,25 @@ class ProjectsPage(QFrame):
     def _new_project(self) -> None:
         if self.has_unsaved_changes() and not self._confirm_discard():
             return
+        if self._setup_service is not None:
+            from morphorum_studio.ui.setup_dialog import NewProjectDialog
+            dialog = NewProjectDialog(self._setup_service, self)
+            dialog.project_created.connect(self._imported)
+            self.setup_dialog = dialog
+            dialog.open()
+            return
         name, accepted = QInputDialog.getText(
             self, "New project", "Project name:", QLineEdit.EchoMode.Normal, "Untitled Animation")
         if accepted and name.strip():
             self._service.create(name)
+
+    def _open_models(self) -> None:
+        if self._models_service is None:
+            return
+        from morphorum_studio.ui.models_dialog import ModelsDialog
+        dialog = ModelsDialog(self._models_service, self)
+        self.models_dialog = dialog
+        dialog.open()
 
     def _import_deforum(self) -> None:
         if self._import_service is None:
@@ -653,6 +677,7 @@ class ProjectsPage(QFrame):
                       "trash": "Could not move to Trash",
                       "source_upload": "Could not upload the image",
                       "source_clear": "Could not remove the image",
+                      "start_mode": "Could not change the start mode",
                       "audio_attach": "Could not attach the soundtrack",
                       "audio_offset": "Could not change the offset",
                       "copy": "Could not save the copy"}

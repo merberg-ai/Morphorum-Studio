@@ -237,6 +237,20 @@ class ProjectsApi:
             raise BackendError("INVALID_RESPONSE", "Backend did not provide the new project revision")
         return parse_project(payload), new_etag
 
+    def set_start_mode(self, project_id: str, mode: str) -> None:
+        """Choose whether frame 0 starts from the prompt or the attached source image (img2img).
+
+        The current ETag is read first and presented, so a project changed elsewhere is refused
+        (412) instead of overwritten. The backend merges the partial ``animation`` body.
+        """
+        if mode not in ("prompt", "source"):
+            raise ValueError("start mode must be 'prompt' or 'source'")
+        _, etag = self._client.get_json_etag(self._path(project_id))
+        if etag is None:
+            raise BackendError("INVALID_RESPONSE", "Backend did not provide a project revision")
+        self._client.send_json("PUT", self._path(project_id), {"animation": {"start_mode": mode}},
+                               if_match=etag)
+
     def trash(self, project_id: str) -> None:
         """Moves the project to the backend's Trash (the backend refuses while it is busy: 409)."""
         self._client.send_json("DELETE", self._path(project_id))

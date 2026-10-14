@@ -38,7 +38,8 @@ class Store:
     def project(self, pid):
         p = self.projects[pid]
         return {"project": {"id": pid, "name": p["name"], "notes": p["notes"],
-                            "animation": {"width": 512, "height": 512, "fps": 12, "max_frames": 24}}}
+                            "animation": {"width": 512, "height": 512, "fps": 12, "max_frames": 24,
+                                          "start_mode": p.get("animation", {}).get("start_mode", "prompt")}}}
 
 
 class Client:
@@ -479,6 +480,42 @@ def test_media_card_shows_existing_assets(tmp_path):
     assert card.source_text.text() == "No source image attached."
     assert not card.source_copy.isEnabled() and card.audio_copy.isEnabled()
     assert card.audio_choose.text() == "Replace audio…"
+
+
+def test_start_mode_needs_a_source_image_and_saves_with_the_revision(tmp_path, monkeypatch):
+    store, session, service, prefs, page = make(tmp_path)
+    page.set_active(True)
+    page._select("alpha")
+    card = page.assets_card
+    assert card.start_mode.currentData() == "prompt"
+    assert not card.start_mode.model().item(1).isEnabled()  # nothing to start from yet
+    img = tmp_path / "pic.png"
+    img.write_bytes(PNG)
+    pick(monkeypatch, open_path=str(img))
+    card.source_choose.click()
+    assert card.start_mode.model().item(1).isEnabled()
+    revision = page._etag
+    card.start_mode.setCurrentIndex(1)
+    card.start_mode.activated.emit(1)
+    put = [c for c in store.calls if c[0] == "PUT"][-1]
+    assert put[2] == {"animation": {"start_mode": "source"}} and put[3] == revision
+    assert page._etag != revision  # the page re-read the project
+    assert card.start_mode.currentData() == "source" and "strength" in card.start_note.text()
+
+
+def test_start_mode_conflict_is_reported_not_overwritten(tmp_path, monkeypatch):
+    store, session, service, prefs, page = make(tmp_path)
+    asked = answer(monkeypatch)
+    page.set_active(True)
+    page._select("alpha")
+    card = page.assets_card
+    store.source = PNG
+    card._service.load_assets("alpha")
+    store.fail["PUT"] = BackendError("PRECONDITION_FAILED", "Project changed", 412)
+    card.start_mode.setCurrentIndex(1)
+    card.start_mode.activated.emit(1)
+    assert any(a[0] == "warn" and a[1] == "Could not change the start mode" for a in asked)
+    assert card.start_mode.currentData() == "prompt"  # snapped back to what is saved
 
 
 def test_upload_source_reloads_project_revision(tmp_path, monkeypatch):

@@ -125,7 +125,7 @@ def main() -> int:
     for connected in (False, True):
         if connected:
             window.session.connected(info(features=FEATURES), "tok")
-            settle(400)
+            settle(1200)  # Home loads recent projects and thumbnails in the background
         for size in args.sizes.split(","):
             width, height = (int(v) for v in size.split("x"))
             window.resize(width, height)

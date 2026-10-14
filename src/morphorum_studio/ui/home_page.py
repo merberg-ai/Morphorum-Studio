@@ -523,6 +523,7 @@ class HomePage(QFrame):
             tile = ProjectTile(item, self._tokens)
             tile.clicked.connect(self.open_project)
             self.recent_grid.addWidget(tile, index // self.TILE_COLUMNS, index % self.TILE_COLUMNS)
+            tile.show()  # tiles may be added while this page is hidden; show with the parent
             self.tiles.append(tile)
         self.recent_note.setText("" if items else
                                  "No projects yet. Use New project to create your first one.")

@@ -31,6 +31,8 @@ from morphorum_studio.ui.image_service import ImageLabService
 from morphorum_studio.ui.preferences import StudioPreferences
 from morphorum_studio.ui.projects_page import ProjectsPage
 from morphorum_studio.ui.recent_service import RecentProjectsService
+from morphorum_studio.ui.queue_page import QueuePage
+from morphorum_studio.ui.queue_service import QueueService
 from morphorum_studio.ui.render_service import RenderService
 from morphorum_studio.ui.video_service import VideoService
 from morphorum_studio.ui.console_service import ConsoleService
@@ -82,8 +84,8 @@ PAGES: tuple[tuple[str, str, str], ...] = (
     (
         "Render Queue",
         "Live Job Monitor",
-        "Renders are started and followed from a project's Render card on the Projects page. "
-        "A cross-project queue view is planned.",
+        "Image jobs and animation renders on the connected backend, with cancel and resume "
+        "where the backend allows it.",
     ),
     (
         "Console",
@@ -204,6 +206,7 @@ class StudioMainWindow(QMainWindow):
         self.recent_service = RecentProjectsService(self.session, self)
         self.library_service = RecentProjectsService(
             self.session, self, count=24, refresh_ms=30000)
+        self.queue_service = QueueService(self.session, self)
         self.pages = QStackedWidget()
         self.pages.setObjectName("pages")
         for page_name, title, description in PAGES:
@@ -240,6 +243,13 @@ class StudioMainWindow(QMainWindow):
                 self.editor_page = EditorPage(self.session, self.projects_service, self.timeline_service,
                                               self.render_service, self.video_service)
                 self.pages.addWidget(self.editor_page)
+            elif page_name == "Render Queue":
+                self.queue_page = QueuePage(self.session, self.queue_service)
+                self.queue_page.open_connections.connect(self._show_connections)
+                self.queue_page.open_timeline.connect(self._open_in_timeline)
+                self.queue_page.open_lab.connect(
+                    lambda: self.navigation.setCurrentRow(names.index("Image Lab")))
+                self.pages.addWidget(self.queue_page)
             elif page_name == "Console":
                 self.console_page = ConsolePage(self.session, self.console_service, self.preferences)
                 self.pages.addWidget(self.console_page)
@@ -272,6 +282,9 @@ class StudioMainWindow(QMainWindow):
         )
         self.navigation.currentRowChanged.connect(
             lambda row: self.editor_page.set_active(row == names.index("Editor"))
+        )
+        self.navigation.currentRowChanged.connect(
+            lambda row: self.queue_page.set_active(row == names.index("Render Queue"))
         )
         self.connection_status.clicked.connect(
             lambda *_: self._show_connections()
@@ -469,7 +482,8 @@ class StudioMainWindow(QMainWindow):
     def _refresh_page(self) -> None:
         name = PAGES[self.navigation.currentRow()][0]
         button = {"Projects": lambda: self.projects_page.refresh_button,
-                  "Editor": lambda: self.editor_page.reload}.get(name)
+                  "Editor": lambda: self.editor_page.reload,
+                  "Render Queue": lambda: self.queue_page.refresh_button}.get(name)
         if button is not None:
             button().click()
 

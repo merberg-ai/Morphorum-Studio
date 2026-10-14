@@ -3,7 +3,7 @@
 Studio never computes motion itself. A *draft* is a list of layer objects; the backend validates
 and compiles them (``/motion-lab/preview`` without saving, ``/motion-lab/apply`` saving into the
 project's camera tracks) and reports the six resolved per-frame curves. Layers Studio has no
-editor for yet (recorded takes, audio pulses) are kept exactly as the backend stored them and
+editor for yet (recorded takes) are kept exactly as the backend stored them and
 sent back unchanged, so editing other layers never loses them.
 """
 
@@ -26,7 +26,7 @@ AXIS_LABELS = {
 }
 PRESETS = ("still", "gentle-drift", "wave", "spiral", "figure-eight", "rocking", "push-in", "pull-out")
 INTERPOLATIONS = ("linear", "hold", "smoothstep", "smootherstep", "cubic")
-EDITABLE = ("preset", "keyframes")  # layer types Studio can edit; others are preserved as-is
+EDITABLE = ("preset", "keyframes", "audio")  # layer types Studio can edit; others are preserved as-is
 MAX_LAYERS = 24
 MAX_KEYS = 128
 _ID = re.compile(r"[A-Za-z0-9_.-]{1,64}")

@@ -31,6 +31,7 @@ from morphorum_studio.ui.image_service import ImageLabService
 from morphorum_studio.ui.preferences import StudioPreferences
 from morphorum_studio.ui.projects_page import ProjectsPage
 from morphorum_studio.ui.recent_service import RecentProjectsService
+from morphorum_studio.ui.audio_service import AudioService
 from morphorum_studio.ui.motion_service import MotionService
 from morphorum_studio.ui.queue_page import QueuePage
 from morphorum_studio.ui.queue_service import QueueService
@@ -209,6 +210,10 @@ class StudioMainWindow(QMainWindow):
             self.session, self, count=24, refresh_ms=30000)
         self.queue_service = QueueService(self.session, self)
         self.motion_service = MotionService(self.session, self)
+        self.audio_service = AudioService(
+            self.session,
+            Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.CacheLocation))
+            / "motion-audio", self)
         self.pages = QStackedWidget()
         self.pages.setObjectName("pages")
         for page_name, title, description in PAGES:
@@ -244,7 +249,7 @@ class StudioMainWindow(QMainWindow):
             elif page_name == "Editor":
                 self.editor_page = EditorPage(self.session, self.projects_service, self.timeline_service,
                                               self.render_service, self.video_service,
-                                              self.motion_service)
+                                              self.motion_service, self.audio_service)
                 self.pages.addWidget(self.editor_page)
             elif page_name == "Render Queue":
                 self.queue_page = QueuePage(self.session, self.queue_service)

@@ -24,8 +24,8 @@ from morphorum_studio.ui.motion_service import MotionService
 
 QApplication.instance() or QApplication(["morphorum-studio-tests"])
 
-AUDIO_LAYER = {"id": "audio-1", "type": "audio", "name": "Kick pulses", "enabled": True,
-               "blend": "add", "start_frame": 0, "end_frame": 24, "axis": "translation_z"}
+AUDIO_LAYER = {"id": "take-1", "type": "recording", "name": "Kick take", "enabled": True,
+               "blend": "add", "start_frame": 0, "end_frame": 24, "axes": ["translation_z"]}
 
 
 def raw_project(mode="3d", layers=None):
@@ -94,7 +94,7 @@ def rig(project=None):
 def test_state_of_reads_mode_layers_and_tolerates_junk():
     state = state_of(raw_project())
     assert state.usable and state.frames == 24 and state.fps == 12.0
-    assert state.layers[0]["id"] == "audio-1" and state.limits == {"translation_x": 0.12}
+    assert state.layers[0]["id"] == "take-1" and state.limits == {"translation_x": 0.12}
     assert not state_of(raw_project(mode="2d")).usable
     assert not state_of("nonsense").usable and state_of(None).layers == ()
 
@@ -118,8 +118,8 @@ def test_new_layers_have_unique_ids_and_valid_shape():
 def test_describe_and_editable():
     assert describe_layer({"type": "preset", "preset": "push-in"}) == "Push in"
     assert describe_layer({"type": "keyframes", "axis": "rotation_y"}) == "Curve · Pan (Y)"
-    assert describe_layer(AUDIO_LAYER) == "Kick pulses"
-    assert editable({"type": "preset"}) and not editable(AUDIO_LAYER)
+    assert describe_layer(AUDIO_LAYER) == "Kick take"
+    assert editable({"type": "preset"}) and editable({"type": "audio"}) and not editable(AUDIO_LAYER)
 
 
 def test_parse_preview_and_conflict_detection():
@@ -141,7 +141,7 @@ def test_parse_preview_and_conflict_detection():
 def test_panel_loads_layers_and_keeps_unknown_layers():
     client, session, service, panel = rig()
     panel.set_project("demo")
-    assert panel.layer_list.count() == 1 and "Kick pulses" in panel.layer_list.item(0).text()
+    assert panel.layer_list.count() == 1 and "Kick take" in panel.layer_list.item(0).text()
     assert not panel.dirty and panel.preview_button.isEnabled()
     assert panel.preset_combo.count() == 3
     assert not panel.blend_combo.isVisibleTo(panel) and panel.kept_note.text()
@@ -168,7 +168,7 @@ def test_add_edit_move_remove_layers():
     edited = panel.layers[1]
     assert edited["strength"] == 0.8 and edited["end_frame"] == 12 and edited["blend"] == "replace"
     panel.up_button.click()
-    assert panel.layers[0]["id"] == edited["id"] and panel.layers[1]["id"] == "audio-1"
+    assert panel.layers[0]["id"] == edited["id"] and panel.layers[1]["id"] == "take-1"
     panel.duplicate_button.click()
     assert len(panel.layers) == 3 and len({x["id"] for x in panel.layers}) == 3
     panel.remove_button.click()
@@ -222,7 +222,7 @@ def test_preview_sends_draft_and_draws_chart():
     panel.add_preset_button.click()
     panel.preview_button.click()
     step, body = client.posts[-1]
-    assert step == "preview" and len(body["layers"]) == 2 and body["layers"][0]["id"] == "audio-1"
+    assert step == "preview" and len(body["layers"]) == 2 and body["layers"][0]["id"] == "take-1"
     assert panel.chart.has_data and "Clipped" in panel.limit_note.text()
     panel.strength_spin.setValue(0.9)
     assert panel.chart._stale is True

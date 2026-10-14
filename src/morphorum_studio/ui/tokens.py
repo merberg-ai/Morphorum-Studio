@@ -485,6 +485,55 @@ QFrame#card {
     border: 1px solid $line2;
     border-radius: 14px;
 }
+QFrame#hero {
+    border: 1px solid $line2;
+    border-radius: 14px;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+        stop:0 rgba(79, 125, 255, 46), stop:1 rgba(148, 104, 255, 20));
+}
+QLabel#heroTitle {
+    font-family: "$font_display", "Segoe UI", sans-serif;
+    font-size: 22px;
+    font-weight: 600;
+    color: $text;
+    background: transparent;
+}
+QFrame#tile {
+    background: $base;
+    border: 1px solid $line2;
+    border-radius: 12px;
+}
+QFrame#tile:hover, QFrame#tile:focus {
+    border-color: $cyan;
+}
+QLabel#chip {
+    padding: 2px 9px;
+    border-radius: 9px;
+    border: 1px solid $line2;
+    color: $dim;
+    font-size: 11px;
+    font-weight: 500;
+}
+QLabel#chip[state="ok"] {
+    background: rgba(61, 220, 151, 23);
+    border-color: rgba(61, 220, 151, 71);
+    color: #9ff0c9;
+}
+QLabel#chip[state="busy"] {
+    background: rgba(79, 125, 255, 38);
+    border-color: rgba(79, 125, 255, 110);
+    color: #b7caff;
+}
+QLabel#chip[state="warn"] {
+    background: rgba(246, 185, 76, 23);
+    border-color: rgba(246, 185, 76, 71);
+    color: #ffd592;
+}
+QLabel#chip[state="bad"] {
+    background: rgba(255, 93, 115, 23);
+    border-color: rgba(255, 93, 115, 71);
+    color: #ff9aa8;
+}
 QLabel#cardTitle {
     font-family: "$font_display", "Segoe UI", sans-serif;
     font-size: 15px;

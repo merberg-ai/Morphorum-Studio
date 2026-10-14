@@ -10,7 +10,7 @@ from collections import deque
 from datetime import datetime
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 from morphorum_studio.backend.schema import GpuDevice, Telemetry
 from morphorum_studio.backend.session import BackendSession
 from morphorum_studio.ui.dashboard_service import DashboardService, ModelCatalog
+from morphorum_studio.ui.recent_service import RecentProject, RecentProjectsService, status_chip
 from morphorum_studio.ui.tokens import DARK, Tokens
 
 NA = "—"
@@ -147,6 +148,100 @@ class Sparkline(QWidget):
         painter.drawPath(line)
 
 
+class Thumb(QWidget):
+    """A 16:9-ish preview that crops to fill; an empty one says why it is empty."""
+
+    def __init__(self, tokens: Tokens = DARK) -> None:
+        super().__init__()
+        self._tokens = tokens
+        self._pixmap: QPixmap | None = None
+        self.setFixedHeight(132)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+    @property
+    def has_image(self) -> bool:
+        return self._pixmap is not None
+
+    def set_png(self, data: bytes | None) -> None:
+        pixmap = QPixmap()
+        self._pixmap = pixmap if data and pixmap.loadFromData(data) else None
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        t = self._tokens
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        rect = QRectF(self.rect())
+        clip = QPainterPath()
+        clip.addRoundedRect(rect, 8, 8)
+        painter.setClipPath(clip)
+        painter.fillRect(rect, QColor(t.raised))
+        if self._pixmap is None:
+            painter.setPen(QColor(t.faint))
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, "No render yet")
+            return
+        scale = max(rect.width() / self._pixmap.width(), rect.height() / self._pixmap.height())
+        w, h = self._pixmap.width() * scale, self._pixmap.height() * scale
+        painter.drawPixmap(QRectF(rect.center().x() - w / 2, rect.center().y() - h / 2, w, h),
+                           self._pixmap, QRectF(self._pixmap.rect()))
+
+
+class ProjectTile(QFrame):
+    """A recent project: preview, name, size line and a status chip. Click or Enter opens it."""
+
+    clicked = Signal(str)  # project id
+
+    def __init__(self, item: RecentProject, tokens: Tokens = DARK) -> None:
+        super().__init__()
+        self.setObjectName("tile")
+        self.project_id = item.summary.id
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setAccessibleName(f"Open project {item.summary.name}")
+        self.setToolTip("Open in Library")
+        box = QVBoxLayout(self)
+        box.setContentsMargins(10, 10, 10, 12)
+        box.setSpacing(8)
+        self.thumb = Thumb(tokens)
+        self.thumb.set_png(item.thumb)
+        box.addWidget(self.thumb)
+        self.name = _label(item.summary.name, "cardTitle")
+        box.addWidget(self.name)
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        self.meta = _label(project_meta(item.summary), "hint")
+        row.addWidget(self.meta, 1)
+        text, state = status_chip(item.status)
+        self.chip = _label(text, "chip")
+        self.chip.setProperty("state", state)
+        row.addWidget(self.chip)
+        box.addLayout(row)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit(self.project_id)
+        super().mousePressEvent(event)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
+            self.clicked.emit(self.project_id)
+            return
+        super().keyPressEvent(event)
+
+
+def project_meta(summary) -> str:
+    """Only what the backend reported; nothing is guessed."""
+    parts = []
+    if summary.width and summary.height:
+        parts.append(f"{summary.width}×{summary.height}")
+    if summary.fps:
+        parts.append(f"{summary.fps:g} fps")
+    seconds = summary.duration_seconds
+    if seconds is not None:
+        parts.append(f"{seconds:.1f} s")
+    return " · ".join(parts) or NA
+
+
 # ----------------------------------------------------------------------------- page
 
 def _label(text: str, name: str, wrap: bool = False) -> QLabel:
@@ -158,10 +253,17 @@ def _label(text: str, name: str, wrap: bool = False) -> QLabel:
 
 class HomePage(QFrame):
     open_connections = Signal()
+    new_project = Signal()
+    open_library = Signal()
+    open_lab = Signal()
+    open_project = Signal(str)  # project id
+
+    TILE_COLUMNS = 3
 
     def __init__(self, session: BackendSession, service: DashboardService,
-                 tokens: Tokens = DARK) -> None:
+                 tokens: Tokens = DARK, recent: RecentProjectsService | None = None) -> None:
         super().__init__()
+        self._recent = recent
         self.setObjectName("pageSurface")
         self._session = session
         self._service = service
@@ -178,6 +280,10 @@ class HomePage(QFrame):
         service.models_updated.connect(self._models_updated)
         service.models_failed.connect(self._models_failed)
         service.cleared.connect(self._cleared)
+        if recent is not None:
+            recent.updated.connect(self._recent_updated)
+            recent.failed.connect(self._recent_failed)
+            recent.cleared.connect(self._recent_cleared)
         self._stale_timer = QTimer(self)
         self._stale_timer.setInterval(2000)
         self._stale_timer.timeout.connect(self._refresh_notice)
@@ -259,6 +365,9 @@ class HomePage(QFrame):
         lbox = QVBoxLayout(live)
         lbox.setContentsMargins(0, 0, 0, 0)
         lbox.setSpacing(16)
+        lbox.addWidget(self._build_hero())
+        self.recent_section = self._build_recent()
+        lbox.addWidget(self.recent_section)
         row = QHBoxLayout()
         row.setSpacing(16)
 
@@ -344,6 +453,114 @@ class HomePage(QFrame):
         lbox.addWidget(models)
         self.body.addWidget(live)
 
+
+    def _build_hero(self) -> QFrame:
+        hero = QFrame()
+        hero.setObjectName("hero")
+        box = QVBoxLayout(hero)
+        box.setContentsMargins(26, 22, 26, 24)
+        box.setSpacing(8)
+        box.addWidget(_label("What are we making?", "heroTitle"))
+        box.addWidget(_label(
+            "Start an animation project, open one you have been working on, or generate a "
+            "single image. Rendering runs on your Morphorum backend.", "hint", wrap=True))
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        self.new_button = QPushButton("New project")
+        self.new_button.setObjectName("primaryAction")
+        self.open_button = QPushButton("Open project")
+        self.generate_button = QPushButton("Generate image")
+        for button in (self.new_button, self.open_button, self.generate_button):
+            button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            row.addWidget(button)
+        row.addStretch(1)
+        box.addSpacing(6)
+        box.addLayout(row)
+        self.new_button.setToolTip("Open the new-project wizard in Library")
+        self.open_button.setToolTip("Browse projects in Library")
+        self.generate_button.setToolTip("Open Lab to generate a single image")
+        self.new_button.clicked.connect(self.new_project)
+        self.open_button.clicked.connect(self.open_library)
+        self.generate_button.clicked.connect(self.open_lab)
+        return hero
+
+    def _build_recent(self) -> QWidget:
+        section = QWidget()
+        box = QVBoxLayout(section)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(16)
+
+        recent, rbox = self._card("Recent projects")
+        self.recent_note = _label("Loading projects…", "hint", wrap=True)
+        rbox.addWidget(self.recent_note)
+        self.recent_grid = QGridLayout()
+        self.recent_grid.setHorizontalSpacing(14)
+        self.recent_grid.setVerticalSpacing(14)
+        for column in range(self.TILE_COLUMNS):
+            self.recent_grid.setColumnStretch(column, 1)
+        rbox.addLayout(self.recent_grid)
+        self.tiles: list[ProjectTile] = []
+        box.addWidget(recent)
+
+        queue, qbox = self._card("Render queue")
+        self.queue_note = _label("", "hint", wrap=True)
+        qbox.addWidget(self.queue_note)
+        self.queue_rows = QVBoxLayout()
+        self.queue_rows.setSpacing(6)
+        qbox.addLayout(self.queue_rows)
+        self.queue_card = queue
+        box.addWidget(queue)
+        return section
+
+    # -- recent projects and queue ---------------------------------------------------------
+
+    def _recent_updated(self, items) -> None:
+        for tile in self.tiles:
+            tile.setParent(None)
+            tile.deleteLater()
+        self.tiles = []
+        for index, item in enumerate(items):
+            tile = ProjectTile(item, self._tokens)
+            tile.clicked.connect(self.open_project)
+            self.recent_grid.addWidget(tile, index // self.TILE_COLUMNS, index % self.TILE_COLUMNS)
+            tile.show()  # tiles may be added while this page is hidden; show with the parent
+            self.tiles.append(tile)
+        self.recent_note.setText("" if items else
+                                 "No projects yet. Use New project to create your first one.")
+        self.recent_note.setVisible(not items)
+        self._fill_queue(items)
+
+    def _fill_queue(self, items) -> None:
+        while self.queue_rows.count():
+            widget = self.queue_rows.takeAt(0).widget()
+            if widget is not None:
+                widget.deleteLater()
+        shown = [i for i in items if i.status is not None]
+        shown.sort(key=lambda i: 0 if status_chip(i.status)[1] == "busy" else 1)
+        for item in shown[:5]:
+            row = QWidget()
+            hbox = QHBoxLayout(row)
+            hbox.setContentsMargins(0, 0, 0, 0)
+            hbox.addWidget(_label(item.summary.name, "metricValue"), 1)
+            text, state = status_chip(item.status)
+            chip = _label(text, "chip")
+            chip.setProperty("state", state)
+            hbox.addWidget(chip)
+            self.queue_rows.addWidget(row)
+        self.queue_note.setText(
+            "Latest render of each recent project." if shown
+            else "No renders yet in your recent projects.")
+
+    def _recent_failed(self, code: str) -> None:
+        self.recent_note.setText(f"Could not load projects ({code}). Retrying.")
+        self.recent_note.setVisible(True)
+
+    def _recent_cleared(self) -> None:
+        self._recent_updated(())
+        self.recent_note.setText("Loading projects…")
+        self.recent_note.setVisible(True)
+        self.queue_note.setText("")
+
     # -- session ------------------------------------------------------------------------
 
     def _session_changed(self) -> None:
@@ -365,6 +582,7 @@ class HomePage(QFrame):
         values["Instance"].setToolTip(f"Instance {info.instance_id}\nBoot {info.boot_id}")
         values["Features"].setText(f"{len(enabled)} enabled" if enabled else "none advertised")
         values["Features"].setToolTip(", ".join(enabled))
+        self.recent_section.setVisible(self._recent is not None and info.features.get("project_crud") is True)
         self._features_ok = info.features.get("gpu_telemetry") is True
         self.status_line.setText(
             f"Connected to {info.profile_name}. Live readings update every few seconds "

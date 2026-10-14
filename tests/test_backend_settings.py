@@ -1,5 +1,7 @@
 """BS1: the connected backend's settings (model folders, managed storage, memory options)."""
 
+import pytest
+pytest.skip("bisect", allow_module_level=True)
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

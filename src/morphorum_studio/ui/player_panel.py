@@ -51,6 +51,10 @@ class FrameView(QWidget):
         self.update()
         return True
 
+    def show_pixmap(self, pixmap: QPixmap) -> None:
+        self._pixmap, self._message = pixmap, ""
+        self.update()
+
     def show_message(self, text: str) -> None:
         self._pixmap, self._message = None, text
         self.update()

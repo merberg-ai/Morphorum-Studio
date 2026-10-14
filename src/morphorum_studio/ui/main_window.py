@@ -40,6 +40,7 @@ from morphorum_studio.ui.timeline_service import TimelineService
 from morphorum_studio.ui.console_page import ConsolePage
 from morphorum_studio.ui.projects_service import ProjectsService
 from morphorum_studio.ui.shell import NavRail, TitleBar
+from morphorum_studio.ui.settings_page import SettingsPage
 from morphorum_studio.ui.startup_settings import StartupSettingsPanel
 
 
@@ -47,15 +48,9 @@ PAGES: tuple[tuple[str, str, str], ...] = (
     (
         "Home",
         "Welcome to Morphorum Studio",
-        "Connect to a Morphorum GPU backend from Connections. Model loading and "
+        "Connect to a Morphorum GPU backend from Settings. Model loading and "
         "media rendering stay on the backend, not this computer. The live dashboard "
         "arrives in S2.1.",
-    ),
-    (
-        "Connections",
-        "Backend Connection Manager",
-        "S1: named connection profiles, authenticated capability discovery, "
-        "OS credential storage, host identity checks, and safe reconnect.",
     ),
     (
         "Projects",
@@ -114,7 +109,6 @@ def _label(text: str, object_name: str | None = None) -> QLabel:
 # Rail icon and short label per workspace (full names appear as tooltips).
 NAV_META: dict[str, tuple[str, str]] = {
     "Home": ("home", "Home"),
-    "Connections": ("plug", "Connect"),
     "Projects": ("library", "Projects"),
     "Image Lab": ("sparkle", "Image"),
     "Editor": ("timeline", "Editor"),
@@ -197,7 +191,7 @@ class StudioMainWindow(QMainWindow):
             if page_name == "Home":
                 self.home_page = HomePage(self.session, self.dashboard)
                 self.home_page.open_connections.connect(
-                    lambda: self.navigation.setCurrentRow(names.index("Connections"))
+                    self._show_connections
                 )
                 self.pages.addWidget(self.home_page)
             elif page_name == "Projects":
@@ -207,13 +201,13 @@ class StudioMainWindow(QMainWindow):
                     self.setup_service, self.models_service,
                 )
                 self.projects_page.open_connections.connect(
-                    lambda: self.navigation.setCurrentRow(names.index("Connections"))
+                    self._show_connections
                 )
                 self.pages.addWidget(self.projects_page)
             elif page_name == "Image Lab":
                 self.image_lab_page = ImageLabPage(self.session, self.image_service, self.preferences)
                 self.image_lab_page.open_connections.connect(
-                    lambda: self.navigation.setCurrentRow(names.index("Connections"))
+                    self._show_connections
                 )
                 self.pages.addWidget(self.image_lab_page)
             elif page_name == "Editor":
@@ -222,14 +216,14 @@ class StudioMainWindow(QMainWindow):
             elif page_name == "Console":
                 self.console_page = ConsolePage(self.session, self.console_service, self.preferences)
                 self.pages.addWidget(self.console_page)
-            elif page_name == "Connections":
+            elif page_name == "Settings":
                 self.connections_panel = ConnectionsPanel(
                     preferences=self.preferences, session=self.session
                 )
                 self.connections_panel.status_changed.connect(self._on_connection_status)
-                self.pages.addWidget(self.connections_panel)
-            elif page_name == "Settings":
-                self.pages.addWidget(StartupSettingsPanel(self.preferences))
+                self.settings_page = SettingsPage(
+                    self.connections_panel, StartupSettingsPanel(self.preferences))
+                self.pages.addWidget(self.settings_page)
             else:
                 self.pages.addWidget(self._make_page(page_name, title, description))
         body_layout.addWidget(self.pages, 1)
@@ -250,7 +244,7 @@ class StudioMainWindow(QMainWindow):
             lambda row: self.editor_page.set_active(row == names.index("Editor"))
         )
         self.connection_status.clicked.connect(
-            lambda *_: self.navigation.setCurrentRow(names.index("Connections"))
+            lambda *_: self._show_connections()
         )
         selected_id = self.preferences.profile("last_selected")
         if selected_id:
@@ -264,6 +258,7 @@ class StudioMainWindow(QMainWindow):
         start_page = self.preferences.workspace() if self.preferences.enabled(
             "restore_workspace", True
         ) else "Home"
+        start_page = "Settings" if start_page == "Connections" else start_page  # moved into Settings
         self.navigation.setCurrentRow(names.index(start_page) if start_page in names else 0)
 
         footer = QFrame()
@@ -361,6 +356,11 @@ class StudioMainWindow(QMainWindow):
             "F1\tThis list\n"
             "Ctrl+Q\tQuit\n\n"
             "While you are typing in a text box, its own editing keys take priority.")
+
+    def _show_connections(self) -> None:
+        """Connection setup lives on the Settings page (Backend connection tab)."""
+        self.navigation.setCurrentRow([entry[0] for entry in PAGES].index("Settings"))
+        self.settings_page.show_connection()
 
     def _show_about(self) -> None:
         QMessageBox.about(

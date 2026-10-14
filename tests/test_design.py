@@ -159,7 +159,7 @@ def test_connection_status_updates_pill_footer_and_opens_connections(tmp_path):
         assert window.footer_status.text() == "BACKEND CONNECTED"
         window.navigation.setCurrentRow(0)
         window.connection_status.click()
-        assert window.navigation.currentRow() == [p[0] for p in PAGES].index("Connections")
+        assert window.navigation.currentRow() == [p[0] for p in PAGES].index("Settings")
     finally:
         window.close()
 

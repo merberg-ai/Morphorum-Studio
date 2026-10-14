@@ -181,7 +181,7 @@ class ProjectsPage(QFrame):
         lbox.addWidget(self.project_list, 1)
         self.list_note = _label("", "hint", wrap=True)
         lbox.addWidget(self.list_note)
-        self.connect_button = QPushButton("Open Connections")
+        self.connect_button = QPushButton("Open connection settings")
         self.connect_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         lbox.addWidget(self.connect_button, 0, Qt.AlignmentFlag.AlignLeft)
         body.addWidget(left)

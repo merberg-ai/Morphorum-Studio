@@ -23,6 +23,12 @@ scaling run. The PNGs are uploaded as the `ui-screenshots` artifact and pushed t
 - **Remembered:** window size/position and last workspace (already), and now the console's level
   filter, Follow and Wrap.
 
+- **Connection setup moved into Settings:** the separate Connect workspace is gone. Settings now has
+  two tabs, *Backend connection* (the profile, credential and Connect / Test controls, unchanged) and
+  *Desktop preferences*. Everything that used to open Connections (the status pill, the Open connection
+  settings buttons) now opens Settings on the Backend connection tab, and a saved "Connections"
+  last-workspace opens Settings.
+
 ## Not done
 - Resizable docks/panels and multi-monitor layouts (S6), theme/font selection (S6).
 - The offscreen header pill shows "BACKEND OFFLINE" in screenshots because the fake bypasses the
@@ -37,4 +43,6 @@ scaling run. The PNGs are uploaded as the `ui-screenshots` artifact and pushed t
 5. Ctrl+N opens the wizard, Ctrl+S saves edited notes, F5 refreshes, F1 lists the shortcuts.
 6. Hover the main buttons: tooltips appear.
 7. Set the console to Warnings and untick Follow, restart Studio: both are remembered.
-8. Try Windows display scaling of 125% and 150%: no clipped text or overlapping controls.
+8. The rail has no Connect item; Settings has the two tabs. Click the status pill and the Open connection
+   settings buttons: each lands on Settings → Backend connection. Connect, restart, and auto-connect still work.
+9. Try Windows display scaling of 125% and 150%: no clipped text or overlapping controls.

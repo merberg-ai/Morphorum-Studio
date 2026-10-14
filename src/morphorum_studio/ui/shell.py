@@ -51,7 +51,7 @@ class BrandMark(QWidget):
 
 
 class ConnectionPill(QPushButton):
-    """Backend connection status in the title bar; clicking opens Connections."""
+    """Backend connection status in the title bar; clicking opens Settings → Backend connection."""
 
     STATES = ("offline", "connected", "busy", "error")
 

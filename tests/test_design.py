@@ -170,7 +170,7 @@ def test_view_menu_switches_workspaces(tmp_path):
         menus = {
             b.text(): b.menu() for b in window.title_bar.findChildren(QToolButton, "menuButton")
         }
-        assert set(menus) == {"File", "View", "Help"}
+        assert set(menus) == {"File", "Edit", "View", "Help"}
         actions = menus["View"].actions()
         assert [a.text() for a in actions] == [p[0] for p in PAGES]
         actions[4].trigger()

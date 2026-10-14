@@ -24,6 +24,7 @@ FOLDER_NAME = "morphorum-backend"
 CLIENT_NAME = "Morphorum Studio (managed)"
 CLIENT_DAYS = 365  # the backend allows 1-365
 LOOPBACK = "127.0.0.1"
+ALL_INTERFACES = "0.0.0.0"
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
@@ -52,6 +53,8 @@ class ManagedSettings:
     stop_on_exit: bool = True
     autostart: bool = True  # start and connect when Studio opens, if this was the last backend used
     profile_id: str = ""  # the connection profile Studio keeps for this backend
+    auto_restart: bool = True  # start the backend again if it stops unexpectedly
+    lan: bool = False  # listen on the local network instead of this PC only
 
 
 _FIELDS = {f.name for f in fields(ManagedSettings)}
@@ -67,7 +70,7 @@ def _clean(data: object) -> ManagedSettings:
     port = kept.get("port")
     if type(port) is int and 1 <= port <= 65535:
         out.port = port
-    for key in ("stop_on_exit", "autostart"):
+    for key in ("stop_on_exit", "autostart", "auto_restart", "lan"):
         if isinstance(kept.get(key), bool):
             setattr(out, key, kept[key])
     if isinstance(kept.get("profile_id"), str) and re.fullmatch(r"[0-9a-f]{32}", kept["profile_id"]):
@@ -140,9 +143,9 @@ def check_folder(path: str | os.PathLike | None) -> FolderCheck:
 
 # ---------------------------------------------------------------------------- commands
 
-def serve_command(folder: Path, port: int) -> tuple[str, list[str]]:
-    """Run the API-only server on loopback. LAN exposure is deliberately not offered here."""
-    return str(python_path(folder)), ["-m", "morphorum", "serve", "--host", LOOPBACK,
+def serve_command(folder: Path, port: int, lan: bool = False) -> tuple[str, list[str]]:
+    """Run the API-only server: on loopback, or on every interface only when ``lan`` was chosen."""
+    return str(python_path(folder)), ["-m", "morphorum", "serve", "--host", ALL_INTERFACES if lan else LOOPBACK,
                                       "--port", str(int(port)), "--backend-only"]
 
 
@@ -367,3 +370,69 @@ def fetch_bootstrap(url: str, dest: Path, opener=None) -> None:
         raise OSError("The downloaded installer does not look right, so it was not run.")
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(data)
+
+
+# ---------------------------------------------------------------------------- lifecycle helpers
+
+LAN_WARNING = (
+    "Other computers on your network will be able to reach this backend. It asks for a credential, "
+    "but traffic is plain HTTP and not encrypted. Use this only on a network you trust, never on the "
+    "internet. Windows may ask to allow the connection through its firewall."
+)
+
+
+def lan_address(port: int) -> str:
+    """This PC's address on the local network as other computers would use it, or '' if unknown."""
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect(("192.0.2.1", 9))  # no packet is sent; this only selects the outgoing interface
+        host = probe.getsockname()[0]
+    except OSError:
+        return ""
+    finally:
+        probe.close()
+    return f"http://{host}:{int(port)}" if host and not host.startswith("127.") else ""
+
+
+def parse_listening_pid(netstat: str, port: int) -> int | None:
+    """The PID listening on ``port`` in the output of ``netstat -ano -p tcp``."""
+    suffix = f":{int(port)}"
+    for line in netstat.splitlines():
+        parts = line.split()
+        if len(parts) >= 5 and parts[0].upper() == "TCP" and parts[3].upper() == "LISTENING" \
+                and parts[1].endswith(suffix):
+            try:
+                return int(parts[4])
+            except ValueError:
+                return None
+    return None
+
+
+def parse_process_name(tasklist_csv: str) -> str:
+    """The image name from one ``tasklist /FO CSV /NH`` row, or ''."""
+    line = tasklist_csv.strip().splitlines()[0] if tasklist_csv.strip() else ""
+    if line.startswith('"'):
+        name = line.split('","')[0].lstrip('"')
+        return "" if name.upper().startswith("INFO:") else name
+    return ""
+
+
+def describe_port_owner(port: int, run=None) -> str:
+    """Best effort, Windows only: 'python.exe (PID 1234)' for whatever listens on ``port``; '' if unknown."""
+    if os.name != "nt" and run is None:
+        return ""
+    import subprocess
+
+    def default_run(args: list[str]) -> str:
+        return subprocess.run(args, capture_output=True, text=True, timeout=5,
+                              creationflags=0x08000000).stdout
+
+    run = run or default_run
+    try:
+        pid = parse_listening_pid(run(["netstat", "-ano", "-p", "tcp"]), port)
+        if pid is None:
+            return ""
+        name = parse_process_name(run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"]))
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return f"{name} (PID {pid})" if name else f"PID {pid}"

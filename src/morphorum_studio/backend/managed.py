@@ -50,6 +50,7 @@ class ManagedSettings:
     folder: str = ""
     port: int = DEFAULT_PORT
     stop_on_exit: bool = True
+    autostart: bool = True  # start and connect when Studio opens, if this was the last backend used
     profile_id: str = ""  # the connection profile Studio keeps for this backend
 
 
@@ -66,8 +67,9 @@ def _clean(data: object) -> ManagedSettings:
     port = kept.get("port")
     if type(port) is int and 1 <= port <= 65535:
         out.port = port
-    if isinstance(kept.get("stop_on_exit"), bool):
-        out.stop_on_exit = kept["stop_on_exit"]
+    for key in ("stop_on_exit", "autostart"):
+        if isinstance(kept.get(key), bool):
+            setattr(out, key, kept[key])
     if isinstance(kept.get("profile_id"), str) and re.fullmatch(r"[0-9a-f]{32}", kept["profile_id"]):
         out.profile_id = kept["profile_id"]
     return out

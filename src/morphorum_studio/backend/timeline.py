@@ -240,3 +240,139 @@ class TimelineApi:
             {"project": project, "start_frame": frame, "end_frame": frame, "step": 1},
             max_bytes=2 * 1024 * 1024)
         return parse_resolved(payload, timeline)
+
+
+# ---- S4.2: keyframe editing ---------------------------------------------------------------
+#
+# The backend saves each keyframe call immediately and has no revision check of its own, so Studio
+# (1) compares the project's ETag with the one it loaded before every edit, (2) plans each edit
+# together with its exact inverse from the timeline it is showing, and (3) reloads from the
+# backend afterwards instead of trusting its own prediction.
+
+MAX_VALUE = 4000
+
+
+@dataclass(frozen=True)
+class Op:
+    kind: str  # upsert | delete | move | interp
+    track: str  # "group.name"
+    frame: int = 0
+    value: str = ""  # upsert: the value; interp: the mode
+    target: int = 0  # move: destination frame
+    overwrite: bool = False  # move
+
+
+@dataclass(frozen=True)
+class Edit:
+    label: str
+    forward: tuple[Op, ...]
+    inverse: tuple[Op, ...]
+
+
+class EditError(ValueError):
+    """The edit is refused before anything is sent (no network involved)."""
+
+
+def keyframe_at(track: Track, frame: int) -> Keyframe | None:
+    return next((k for k in track.keyframes if k.frame == frame), None)
+
+
+def _editable(track: Track, frame: int, max_frames: int) -> Keyframe | None:
+    if not 0 <= frame < max_frames:
+        raise EditError(f"Frame {frame} is outside 0..{max_frames - 1}.")
+    existing = keyframe_at(track, frame)
+    if existing is not None and existing.expression:
+        raise EditError("This keyframe uses a frame expression; edit it in the backend Web UI.")
+    return existing
+
+
+def plan_set(track: Track, frame: int, value: str, max_frames: int) -> Edit:
+    value = value.strip() if track.kind == "numeric" else value
+    if track.kind == "numeric" and not value:
+        raise EditError("A numeric keyframe needs a value or expression.")
+    if len(value) > MAX_VALUE:
+        raise EditError(f"Values are limited to {MAX_VALUE} characters.")
+    previous = _editable(track, frame, max_frames)
+    if previous is not None and previous.value == value:
+        raise EditError("That keyframe already has this value.")
+    forward = (Op("upsert", track.id, frame, value),)
+    inverse = (Op("upsert", track.id, frame, previous.value),) if previous else (Op("delete", track.id, frame),)
+    verb = "Change" if previous else "Add"
+    return Edit(f"{verb} {track.label} keyframe at {frame}", forward, inverse)
+
+
+def plan_delete(track: Track, frame: int, max_frames: int) -> Edit:
+    previous = _editable(track, frame, max_frames)
+    if previous is None:
+        raise EditError("There is no keyframe at that frame.")
+    if frame == 0 and track.kind == "prompt":
+        raise EditError("A prompt track needs a keyframe at frame 0.")
+    return Edit(f"Delete {track.label} keyframe at {frame}", (Op("delete", track.id, frame),),
+                (Op("upsert", track.id, frame, previous.value),))
+
+
+def plan_move(track: Track, source: int, target: int, max_frames: int, overwrite: bool = False) -> Edit:
+    moving = _editable(track, source, max_frames)
+    if moving is None:
+        raise EditError("There is no keyframe at that frame.")
+    if source == target:
+        raise EditError("The keyframe is already there.")
+    replaced = _editable(track, target, max_frames)
+    if source == 0 and track.kind == "prompt":
+        raise EditError("The frame-0 prompt keyframe cannot be moved.")
+    if replaced is not None and not overwrite:
+        raise EditError("There is already a keyframe at the target frame.")
+    inverse: list[Op] = [Op("move", track.id, target, target=source)]
+    if replaced is not None:
+        inverse.append(Op("upsert", track.id, target, replaced.value))
+    return Edit(f"Move {track.label} keyframe {source} to {target}",
+                (Op("move", track.id, source, target=target, overwrite=replaced is not None),),
+                tuple(inverse))
+
+
+def plan_interpolation(track: Track, mode: str) -> Edit:
+    if mode not in track.modes:
+        raise EditError(f"{mode} is not available for this track.")
+    if mode == track.interpolation:
+        raise EditError("That interpolation is already set.")
+    return Edit(f"Set {track.label} interpolation to {mode}", (Op("interp", track.id, value=mode),),
+                (Op("interp", track.id, value=track.interpolation),))
+
+
+def etag_of(payload_etag: str | None) -> str:
+    if not payload_etag:
+        raise BackendError("INVALID_RESPONSE", "The backend did not provide a project revision")
+    return payload_etag
+
+
+class EditApi(TimelineApi):
+    """Keyframe calls plus the revision check that guards them."""
+
+    def project_revision(self, project_id: str) -> tuple[dict, str]:
+        if not valid_project_id(project_id):
+            raise ValueError("invalid project id")
+        payload, etag = self._client.get_json_etag(f"/api/animation/projects/{project_id}")
+        project = _object(payload, "Project").get("project")
+        if not isinstance(project, dict) or project.get("id") != project_id:
+            raise BackendError("INVALID_RESPONSE", "Project response is incomplete")
+        return project, etag_of(etag)
+
+    def _track_path(self, project_id: str, track_id: str) -> str:
+        group, _, name = track_id.partition(".")
+        if not (valid_project_id(project_id) and _ID.fullmatch(group) and _ID.fullmatch(name)):
+            raise ValueError("invalid track")
+        return f"/api/animation/projects/{project_id}/timeline/tracks/{group}/{name}"
+
+    def run(self, project_id: str, op: Op) -> None:
+        base = self._track_path(project_id, op.track)
+        if op.kind == "upsert":
+            self._client.send_json("PUT", f"{base}/keyframes/{int(op.frame)}", {"value": op.value})
+        elif op.kind == "delete":
+            self._client.send_json("DELETE", f"{base}/keyframes/{int(op.frame)}")
+        elif op.kind == "move":
+            self._client.send_json("POST", f"{base}/keyframes/{int(op.frame)}/move",
+                                   {"frame": int(op.target), "overwrite": bool(op.overwrite)})
+        elif op.kind == "interp":
+            self._client.send_json("PUT", f"{base}/interpolation", {"interpolation": op.value})
+        else:
+            raise ValueError("unknown edit operation")

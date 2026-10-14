@@ -67,6 +67,14 @@ class TimelineView(QWidget):
         self.setFixedHeight(max(height, RULER_H + 40))
         self.update()
 
+    def set_timeline_keep_frame(self, timeline: Timeline) -> None:
+        """Replace the lanes after an edit, keeping the playhead and the selected track."""
+        frame, selected = self._frame, self._selected
+        self.set_timeline(timeline)
+        self._frame = min(frame, timeline.max_frames - 1)
+        self._selected = selected if selected and timeline.track(selected) else None
+        self.update()
+
     def set_frame(self, frame: int) -> None:
         if self._timeline:
             frame = max(0, min(frame, self._timeline.max_frames - 1))

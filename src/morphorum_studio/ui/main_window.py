@@ -23,7 +23,10 @@ from morphorum_studio import __version__
 from morphorum_studio.backend.images import SubmissionJournal
 from morphorum_studio.backend.session import BackendSession
 from morphorum_studio.ui import frameless
+from morphorum_studio.ui.connection_hub import ConnectionHub
 from morphorum_studio.ui.connections_panel import ConnectionsPanel
+from morphorum_studio.ui.managed_backend import ManagedBackend
+from morphorum_studio.ui.managed_panel import ManagedPanel
 from morphorum_studio.ui.dashboard_service import DashboardService
 from morphorum_studio.ui.home_page import HomePage
 from morphorum_studio.ui.image_lab_page import ImageLabPage
@@ -274,8 +277,14 @@ class StudioMainWindow(QMainWindow):
                     preferences=self.preferences, session=self.session
                 )
                 self.connections_panel.status_changed.connect(self._on_connection_status)
+                self.managed_backend = ManagedBackend(parent=self)
+                self.managed_panel = ManagedPanel(
+                    self.connections_panel, self.managed_backend,
+                    active_jobs=self.queue_service.active_count)
+                self.connection_hub = ConnectionHub(
+                    self.connections_panel, self.managed_panel, self.preferences)
                 self.settings_page = SettingsPage(
-                    self.connections_panel, StartupSettingsPanel(self.preferences))
+                    self.connection_hub, StartupSettingsPanel(self.preferences))
                 self.pages.addWidget(self.settings_page)
             else:
                 self.pages.addWidget(self._make_page(page_name, title, description))
@@ -567,6 +576,9 @@ class StudioMainWindow(QMainWindow):
         if self.preferences.enabled("restore_geometry", True):
             self.preferences.save_window(self)
         self.preferences.sync()
+        if not self.managed_panel.close_requested():
+            event.ignore()
+            return
         self.console_service.stop()
         self.dashboard.set_active(False)
         self.connections_panel.disconnect()

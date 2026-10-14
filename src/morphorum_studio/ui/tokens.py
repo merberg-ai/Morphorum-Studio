@@ -241,6 +241,39 @@ QLabel#footerText {
     font-size: 11px;
 }
 
+/* ---------- Lab: batch thumbnails and aspect tiles ---------- */
+QToolButton#thumb {
+    border: 1px solid $line2;
+    border-radius: 8px;
+    background: $base;
+    padding: 4px;
+    color: $dim;
+    font-size: 11px;
+}
+QToolButton#thumb:hover {
+    border-color: $dim;
+}
+QToolButton#thumb[selected="true"] {
+    border: 2px solid $cyan;
+    color: $text;
+}
+QToolButton#aspectTile {
+    border: 1px solid $line2;
+    border-radius: 8px;
+    background: $base;
+    padding: 4px;
+    color: $dim;
+    font-size: 11px;
+}
+QToolButton#aspectTile:hover {
+    border-color: $dim;
+}
+QToolButton#aspectTile:checked {
+    border: 2px solid $cyan;
+    color: $text;
+    background: $raised;
+}
+
 /* ---------- segmented tabs (Library) ---------- */
 QPushButton#segButton {
     min-height: 0px;

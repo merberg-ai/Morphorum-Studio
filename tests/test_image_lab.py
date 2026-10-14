@@ -438,3 +438,59 @@ def test_main_window_wiring(tmp_path):
         assert window.navigation.currentRow() == names.index("Settings")
     finally:
         window.close()
+
+
+def finished_page(tmp_path):
+    backend, session, service, journal, prefs, page = ready_page(tmp_path)
+    page.prompt_edit.setPlainText("a cat")
+    page.count_spin.setValue(2)
+    page.generate_button.click()
+    backend.jobs["img-1"] = [job_json("img-1", "completed", 2, 1.0)]
+    service.poll_now()
+    return backend, service, page
+
+
+def test_stage_shows_first_result_and_thumbnails_select(tmp_path):
+    backend, service, page = finished_page(tmp_path)
+    keys = list(page._buttons)
+    assert len(keys) == 2 and page._selected == keys[0]
+    assert page._buttons[keys[0]].property("selected") is True
+    assert page.stage_save_button.isEnabled() and page.stage_open_button.isEnabled()
+    page._buttons[keys[1]].click()
+    assert page._selected == keys[1] and page._buttons[keys[0]].property("selected") is False
+    assert keys[1][1] in page.stage_info.text()
+
+
+def test_seed_lock_follows_selected_result(tmp_path):
+    backend, service, page = finished_page(tmp_path)
+    key = page._selected
+    page._seeds[key] = 777
+    page._select_result(*key)
+    page.seed_lock.setChecked(True)
+    assert page.seed_edit.text() == "777" and page.seed_mode.currentData() == "fixed"
+    page.seed_lock.setChecked(False)
+    assert page.seed_edit.text() == "-1"
+
+
+def test_lora_rows_edit_the_prompt(tmp_path):
+    *_, page = ready_page(tmp_path)
+    page.prompt_edit.setPlainText("a cat <lora:Ink Style:0.5> here")
+    assert page.lora_weights.names == ["Ink Style"]
+    page.lora_weights._sliders[0].setValue(20)  # 1.0
+    assert page.prompt_edit.toPlainText() == "a cat <lora:Ink Style:1> here"
+    page.lora_weights.removed.emit(0)
+    assert page.prompt_edit.toPlainText() == "a cat here" and page.lora_weights.names == []
+
+
+def test_aspect_tiles_come_from_backend_presets(tmp_path):
+    *_, page = ready_page(tmp_path)
+    assert [t.text().split("\n")[0] for t in page.aspect_tiles] == ["Square", "Portrait"]
+    page.aspect_tiles[1].click()
+    assert (page.width_spin.value(), page.height_spin.value()) == (832, 1216)
+    assert page.aspect_tiles[1].isChecked() and not page.aspect_tiles[0].isChecked()
+
+
+def test_cleared_resets_stage(tmp_path):
+    backend, service, page = finished_page(tmp_path)
+    page._cleared()
+    assert page._selected is None and not page.stage_save_button.isEnabled()

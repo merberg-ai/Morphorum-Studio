@@ -172,7 +172,8 @@ def test_view_menu_switches_workspaces(tmp_path):
         }
         assert set(menus) == {"File", "Edit", "View", "Help"}
         actions = menus["View"].actions()
-        assert [a.text() for a in actions] == [p[0] for p in PAGES]
+        assert [a.text() for a in actions][:len(PAGES)] == [p[0] for p in PAGES]
+        assert actions[-1].text() == "Refresh this page"
         actions[4].trigger()
         assert window.navigation.currentRow() == 4
     finally:

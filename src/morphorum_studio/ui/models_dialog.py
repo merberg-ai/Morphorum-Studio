@@ -70,6 +70,8 @@ class ModelsDialog(QDialog):
         self._details: dict[str, str] = {}
         self._civitai: dict[str, CivitaiMatch] = {}
         box = QVBoxLayout(self)
+        box.setContentsMargins(22, 20, 22, 20)
+        box.setSpacing(12)
         self.note = QLabel("Loading what the backend has indexed…")
         self.note.setWordWrap(True)
         box.addWidget(self.note)

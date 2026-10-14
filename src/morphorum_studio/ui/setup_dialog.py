@@ -43,6 +43,8 @@ class NewProjectDialog(QDialog):
         self._reviewed = False
         self._local: tuple = ()
         box = QVBoxLayout(self)
+        box.setContentsMargins(22, 20, 22, 20)
+        box.setSpacing(12)
         intro = QLabel("Pick the basics. The backend supplies every other default and checks the "
                        "result before anything is created; camera schedules are left untouched.")
         intro.setWordWrap(True)

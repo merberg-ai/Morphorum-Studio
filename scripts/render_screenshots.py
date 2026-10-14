@@ -86,12 +86,12 @@ def main() -> int:
     from morphorum_studio.ui.fonts import load_bundled_fonts
     from morphorum_studio.ui.main_window import PAGES, StudioMainWindow
     from morphorum_studio.ui.preferences import StudioPreferences
-    from morphorum_studio.ui.theme import DARK_STYLESHEET
+    from morphorum_studio.ui.theme import application_stylesheet
 
     app = QApplication.instance() or QApplication(["screenshots"])
     app.setStyle("Fusion")
     load_bundled_fonts()
-    app.setStyleSheet(DARK_STYLESHEET)
+    app.setStyleSheet(application_stylesheet())
     settings = QSettings(str(out / "prefs.ini"), QSettings.Format.IniFormat)
     window = StudioMainWindow(preferences=StudioPreferences(settings))
     fake = Fake()

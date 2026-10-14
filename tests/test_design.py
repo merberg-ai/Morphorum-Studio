@@ -177,3 +177,16 @@ def test_view_menu_switches_workspaces(tmp_path):
         assert window.navigation.currentRow() == 4
     finally:
         window.close()
+
+
+def test_style_glyphs_are_written_and_referenced_by_the_stylesheet(tmp_path):
+    _app()
+    from morphorum_studio.ui.icons import STYLE_GLYPHS, write_style_glyphs
+
+    directory = write_style_glyphs(str(tmp_path / "glyphs"), DARK.dim)
+    for name in STYLE_GLYPHS:
+        for suffix in ("", "@2x"):
+            assert (tmp_path / "glyphs" / f"{name}{suffix}.png").stat().st_size > 0
+    css = build_stylesheet(DARK, glyph_dir=directory)
+    assert "$" not in css and f'url("{directory}/chev-down.png")' in css and "QSpinBox::up-button" in css
+    assert "chev-down.png" not in build_stylesheet(DARK)  # without glyphs Qt's defaults are used

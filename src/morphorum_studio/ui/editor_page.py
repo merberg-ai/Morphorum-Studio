@@ -90,6 +90,18 @@ class EditorPage(QWidget):
         self.status = _label("", "pageDescription", wrap=True)
         box.addWidget(self.status)
 
+        # Everything below the heading scrolls when the window is too small, instead of overlapping.
+        page_scroll = QScrollArea()
+        page_scroll.setWidgetResizable(True)
+        page_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        body = QWidget()
+        body.setMinimumSize(720, 540)
+        page_scroll.setWidget(body)
+        box.addWidget(page_scroll, 1)
+        box = QVBoxLayout(body)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(10)
+
         top = QHBoxLayout()
         self.project = QComboBox()
         self.project.setMinimumWidth(240)
@@ -167,12 +179,20 @@ class EditorPage(QWidget):
         self.undo_button = QPushButton("Undo")
         self.redo_button = QPushButton("Redo")
         for widget in (self.set_button, self.update_button, self.delete_button, self.move_button,
-                       self.interp, self.undo_button, self.redo_button):
-            if isinstance(widget, QPushButton):
-                widget.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+                       self.undo_button, self.redo_button):
+            widget.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        for widget in (self.set_button, self.update_button, self.move_button, self.delete_button):
             edit_row.addWidget(widget)
         edit_row.addStretch(1)
         right.addLayout(edit_row)
+        history_row = QHBoxLayout()
+        history_row.setSpacing(6)
+        history_row.addWidget(QLabel("Interpolation"))
+        history_row.addWidget(self.interp)
+        history_row.addStretch(1)
+        history_row.addWidget(self.undo_button)
+        history_row.addWidget(self.redo_button)
+        right.addLayout(history_row)
         self.edit_status = _label("", "hint", wrap=True)
         right.addWidget(self.edit_status)
         lower.addLayout(right, 1)

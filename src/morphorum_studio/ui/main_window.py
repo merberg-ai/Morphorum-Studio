@@ -84,8 +84,8 @@ PAGES: tuple[tuple[str, str, str], ...] = (
     (
         "Render Queue",
         "Live Job Monitor",
-        "S3: follow render progress, reconnect to existing jobs, "
-        "download completed frames and export video with audio.",
+        "Renders are started and followed from a project's Render card on the Projects page. "
+        "A cross-project queue view is planned.",
     ),
     (
         "Console",
@@ -272,7 +272,7 @@ class StudioMainWindow(QMainWindow):
         footer_layout.setContentsMargins(14, 5, 14, 5)
         footer_layout.setSpacing(18)
         footer_layout.addWidget(_label(f"Studio {__version__}", "footerText"))
-        footer_layout.addWidget(_label("Native remote connection manager", "footerText"))
+        footer_layout.addWidget(_label("Remote backend client", "footerText"))
         footer_layout.addStretch()
         self.footer_status = _label("BACKEND OFFLINE", "footerText")
         footer_layout.addWidget(self.footer_status)

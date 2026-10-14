@@ -510,5 +510,102 @@ QCheckBox {
 )
 
 
-def build_stylesheet(tokens: Tokens = DARK) -> str:
-    return _QSS.substitute(asdict(tokens))
+_GLYPH_QSS = Template(
+    """
+QComboBox::down-arrow, QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
+    image: url("$dir/chev-down.png");
+    width: 12px;
+    height: 12px;
+}
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
+    image: url("$dir/chev-up.png");
+    width: 12px;
+    height: 12px;
+}
+QSpinBox, QDoubleSpinBox {
+    padding-right: 26px;
+}
+QSpinBox::up-button, QDoubleSpinBox::up-button {
+    subcontrol-origin: border;
+    subcontrol-position: top right;
+    width: 22px;
+    border: none;
+    border-left: 1px solid $line;
+    border-top-right-radius: 8px;
+    background: $raised;
+}
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    subcontrol-origin: border;
+    subcontrol-position: bottom right;
+    width: 22px;
+    border: none;
+    border-left: 1px solid $line;
+    border-top: 1px solid $line;
+    border-bottom-right-radius: 8px;
+    background: $raised;
+}
+QSpinBox::up-button:hover, QSpinBox::down-button:hover,
+QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {
+    background: $hover;
+}
+QCheckBox::indicator:checked {
+    image: url("$dir/check.png");
+}
+"""
+)
+
+_DIALOG_QSS = """
+QDialog {
+    background: $base;
+}
+QTabWidget::pane {
+    border: 1px solid $line;
+    border-radius: 8px;
+    top: -1px;
+}
+QTabBar::tab {
+    background: transparent;
+    color: $dim;
+    padding: 7px 16px;
+    border: 1px solid transparent;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+}
+QTabBar::tab:selected {
+    color: $text;
+    background: $panel;
+    border-color: $line;
+    border-bottom-color: $panel;
+}
+QTabBar::tab:hover:!selected {
+    color: $text;
+}
+QListWidget {
+    background: $base;
+    color: $text;
+    border: 1px solid $line;
+    border-radius: 8px;
+    padding: 4px;
+    outline: none;
+}
+QListWidget::item {
+    padding: 5px 8px;
+    border-radius: 5px;
+}
+QListWidget::item:selected {
+    background: $hover;
+}
+QMessageBox, QInputDialog {
+    background: $base;
+}
+"""
+
+
+def build_stylesheet(tokens: Tokens = DARK, glyph_dir: str | None = None) -> str:
+    """The application stylesheet. ``glyph_dir`` (see ``icons.write_style_glyphs``) adds the arrow and
+    check-mark images; without it those controls fall back to Qt's defaults."""
+    values = asdict(tokens)
+    sheet = _QSS.substitute(values) + Template(_DIALOG_QSS).substitute(values)
+    if glyph_dir:
+        sheet += _GLYPH_QSS.substitute({**values, "dir": glyph_dir})
+    return sheet

@@ -38,6 +38,10 @@ _WINDOW = {
     "win-max": '<rect x="1.5" y="1.5" width="9" height="9" rx="1"/>',
     "win-restore": '<path d="M3.5 3.5V1.5h7v7h-2"/><rect x="1.5" y="3.5" width="7" height="7" rx="1"/>',
     "win-close": '<path d="M1.5 1.5l9 9M10.5 1.5l-9 9"/>',
+    # Control glyphs used by the stylesheet (combo and spin arrows, check mark).
+    "chev-down": '<path d="M2.5 4.5 6 8l3.5-3.5"/>',
+    "chev-up": '<path d="M2.5 7.5 6 4l3.5 3.5"/>',
+    "check": '<path d="M2.5 6.5 5 9l4.5-5.5"/>',
 }
 
 ICON_NAMES = tuple(_RAIL) + tuple(_WINDOW)
@@ -89,3 +93,27 @@ def icon(
 
 def icon_size(size: int = 20) -> QSize:
     return QSize(size, size)
+
+
+STYLE_GLYPHS = ("chev-down", "chev-up", "check")
+
+
+def write_style_glyphs(directory: str, color: str, size: int = 12) -> str:
+    """Write the stylesheet glyphs as PNGs (1x and @2x) and return the directory with ``/`` separators.
+
+    QSS can only reference image files, so these are generated once at start-up into a cache
+    directory. Qt picks the ``@2x`` file on high-DPI screens.
+    """
+    import os
+
+    os.makedirs(directory, exist_ok=True)
+    for name in STYLE_GLYPHS:
+        for scale, suffix in ((1, ""), (2, "@2x")):
+            px = size * scale
+            image = QImage(px, px, QImage.Format.Format_ARGB32_Premultiplied)
+            image.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(image)
+            QSvgRenderer(QByteArray(_svg(name, color))).render(painter)
+            painter.end()
+            image.save(os.path.join(directory, f"{name}{suffix}.png"))
+    return directory.replace("\\", "/")

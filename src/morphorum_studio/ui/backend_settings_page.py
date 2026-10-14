@@ -173,8 +173,7 @@ class BackendSettingsPage(QWidget):
             for family in managed:
                 box.addWidget(_label(f"{family.label} storage", "fieldLabel", wrap=False))
                 box.addLayout(self._path_row(
-                    draft.managed.get(family.id, ""),
-                    lambda text, f=family.id: draft.managed.__setitem__(f, text),
+                    draft.managed.get(family.id, ""), self._storage_setter(family.id),
                     check=False, remove=None, name=f"{family.label} storage folder"))
         _card, box = self._card("Memory and performance")
         self._flag_boxes = {}
@@ -185,6 +184,14 @@ class BackendSettingsPage(QWidget):
             box.addWidget(check)
             box.addWidget(_label(help_text, "hint"))
             self._flag_boxes[key] = check
+
+    def _storage_setter(self, family: str) -> Callable[[str], None]:
+        def set_folder(text: str) -> None:
+            if self.draft is not None:
+                self.draft.managed[family] = text
+                self._update()
+
+        return set_folder
 
     def _flag(self, key: str, on: bool) -> None:
         if self.draft is not None:

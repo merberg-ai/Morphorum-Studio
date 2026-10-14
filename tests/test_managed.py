@@ -621,3 +621,154 @@ def test_switching_the_view_does_not_disconnect(tmp_path):
     hub.set_mode(ADVANCED)
     hub.set_mode(SIMPLE)
     assert calls == []
+
+
+# --------------------------------------------------------------------- opening Studio
+
+from morphorum_studio.backend.session import SessionInfo  # noqa: E402
+from morphorum_studio.ui.managed_startup import wait_for_backend  # noqa: E402
+
+
+def events(panel):
+    seen = {"done": [], "progress": []}
+    panel.startup_done.connect(lambda ok, reason: seen["done"].append((ok, reason)))
+    panel.startup_progress.connect(seen["progress"].append)
+    return seen
+
+
+def fresh(tmp_path, name):
+    folder = tmp_path / name
+    folder.mkdir()
+    return folder
+
+
+def prepared(tmp_path, **kwargs):
+    r = PanelRig(tmp_path, **kwargs)
+    r.choose()
+    profile = r.connections.ensure_managed_profile("http://127.0.0.1:7866")
+    r.vault.set(profile.id, "kept")
+    return r, profile
+
+
+def connect_session(r, profile):
+    r.connections.session.connected(
+        SessionInfo(profile.id, profile.name, profile.url, "0.1", "backend-only", "i1", "b1", {}), "t")
+    r.connections.status_changed.emit("BACKEND CONNECTED")
+
+
+def test_startup_is_wanted_only_for_the_last_used_managed_backend(tmp_path):
+    r, profile = prepared(tmp_path)
+    assert r.panel.settings.autostart is True
+    assert r.panel.startup_wanted(profile.id) is True
+    assert r.panel.startup_wanted("") is False and r.panel.startup_wanted("0" * 32) is False
+    r.panel.autostart.setChecked(False)
+    assert r.panel.startup_wanted(profile.id) is False
+    assert managed.ManagedStore(tmp_path / "managed.json").load().autostart is False
+    r.panel.autostart.setChecked(True)
+    r.panel.settings.folder = str(tmp_path / "gone")
+    assert r.panel.startup_wanted(profile.id) is False
+    bare = PanelRig(fresh(tmp_path, "bare"))
+    assert bare.panel.startup_wanted("anything") is False  # no managed profile yet
+
+
+def test_startup_starts_the_backend_and_reports_when_connected(tmp_path):
+    r, profile = prepared(tmp_path)
+    seen = events(r.panel)
+    r.panel.begin_startup()
+    assert r.rig.process.started and seen["progress"] == ["Starting the local backend…"]
+    assert seen["done"] == []
+    r.run_ready()
+    assert r.connected_calls == 1 and seen["progress"][-1] == "Connecting to the local backend…"
+    connect_session(r, profile)
+    assert seen["done"] == [(True, "")]
+    r.panel.begin_startup()  # a second call after finishing starts a fresh run, it never doubles up
+    assert len(r.rig.processes) == 1
+
+
+def test_startup_connects_to_a_backend_left_from_an_earlier_session(tmp_path):
+    r = PanelRig(tmp_path)
+    r.rig.open_ports.add(7866)
+    managed.write_record(tmp_path / "run.json", str(r.folder), 7866, 5)
+    r.choose()
+    profile = r.connections.ensure_managed_profile("http://127.0.0.1:7866")
+    r.vault.set(profile.id, "kept")
+    seen = events(r.panel)
+    r.panel.begin_startup()
+    assert not r.rig.processes and r.connected_calls == 1
+    connect_session(r, profile)
+    assert seen["done"] == [(True, "")]
+
+
+def test_startup_reports_each_way_it_can_fail(tmp_path):
+    r, profile = prepared(tmp_path)
+    r.rig.open_ports.add(7866)  # something else owns the port
+    r.rig.backend.refresh()
+    seen = events(r.panel)
+    r.panel.begin_startup()
+    assert seen["done"][0][0] is False and "port 7866" in seen["done"][0][1]
+    # a crash while starting
+    r2, _p = prepared(fresh(tmp_path, "two"))
+    seen2 = events(r2.panel)
+    r2.panel.begin_startup()
+    r2.rig.process.say("Traceback: boom\n")
+    r2.rig.process.finish(1)
+    assert seen2["done"][0][0] is False and "exit code 1" in seen2["done"][0][1]
+    assert "Traceback: boom" in r2.panel.detail.text()  # still explained once Studio is open
+    # a rejected credential
+    r3, p3 = prepared(fresh(tmp_path, "three"))
+    seen3 = events(r3.panel)
+    r3.panel.begin_startup()
+    r3.run_ready()
+    r3.connections.status_changed.emit("BACKEND UNAUTHORIZED")
+    assert seen3["done"][0][0] is False and "rejected" in seen3["done"][0][1]
+    # a connection that fails after the backend is up
+    r4, _p4 = prepared(fresh(tmp_path, "four"))
+    seen4 = events(r4.panel)
+    r4.panel.begin_startup()
+    r4.connections.status_changed.emit("BACKEND OFFLINE")  # before connecting: not a failure yet
+    assert seen4["done"] == []
+    r4.run_ready()
+    r4.connections.status_changed.emit("BACKEND OFFLINE")
+    assert seen4["done"][0][0] is False
+
+
+def test_startup_fails_cleanly_when_no_credential_can_be_made(tmp_path):
+    r = PanelRig(tmp_path)
+    r.choose()
+    r.connections.ensure_managed_profile("http://127.0.0.1:7866")  # no stored credential
+    seen = events(r.panel)
+    r.panel.begin_startup()
+    assert seen["progress"][-1] == "Preparing the backend credential…"
+    FakeIssuer.instances[0].finish(None, "The backend could not create a credential (exit code 2).")
+    assert seen["done"] == [(False, "The backend could not create a credential (exit code 2).")]
+    assert not r.rig.processes
+
+
+class FakePanel(QObject):
+    startup_done = Signal(bool, str)
+    startup_progress = Signal(str)
+
+    def __init__(self, script):
+        super().__init__()
+        self.script, self.begun = script, 0
+
+    def begin_startup(self):
+        self.begun += 1
+        self.script(self)
+
+
+def test_waiting_for_the_backend_behind_the_splash():
+    from PySide6.QtCore import QTimer
+    steps = []
+    # finishes later, from the event loop
+    later = FakePanel(lambda p: QTimer.singleShot(20, lambda: (p.startup_progress.emit("Connecting"),
+                                                               p.startup_done.emit(True, ""))))
+    assert wait_for_backend(later, steps.append, limit_ms=5000) == (True, "")
+    assert steps == ["Connecting"]
+    # finishes before the loop even starts
+    instant = FakePanel(lambda p: p.startup_done.emit(False, "nope"))
+    assert wait_for_backend(instant, steps.append, limit_ms=5000) == (False, "nope")
+    # never finishes
+    never = FakePanel(lambda p: None)
+    ok, reason = wait_for_backend(never, steps.append, limit_ms=50)
+    assert ok is False and "in time" in reason

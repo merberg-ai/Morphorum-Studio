@@ -49,20 +49,36 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     preferences = StudioPreferences()
     splash = None
+    total = 3
     if preferences.enabled("show_splash", True):
         splash = StudioSplash()
         splash.show()
-        splash.stage("Loading desktop preferences…", 1)
+        splash.stage("Loading desktop preferences…", 1, total)
         app.processEvents()
-        splash.stage("Preparing native workspaces…", 2)
+        splash.stage("Preparing native workspaces…", 2, total)
         app.processEvents()
     window = StudioMainWindow(preferences=preferences)
+    # If the backend Studio used last is the one it manages itself, bring it up now.
+    managed_startup = window.managed_startup_wanted()
+    failure = ""
+    if splash and managed_startup:
+        from .ui.managed_startup import wait_for_backend
+
+        total = 4
+        splash.stage("Starting the local backend…", 3, total)
+        app.processEvents()
+        ok, reason = wait_for_backend(window.managed_panel, lambda text: splash.stage(text, 3, total))
+        failure = "" if ok else reason or "The local backend could not be started."
     if splash:
-        splash.stage("Restoring desktop session…", 3)
+        splash.stage("Restoring desktop session…", total, total)
         app.processEvents()
     window.show()
     if splash:
         splash.finish(window)
+    if failure:
+        window.show_startup_failure(failure)
+    elif managed_startup and not splash:
+        window.begin_managed_startup()  # no splash to wait behind: bring it up in the background
     if not owns_app:
         return 0  # The embedding application owns its event loop.
     return app.exec()

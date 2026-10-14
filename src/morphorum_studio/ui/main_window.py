@@ -542,6 +542,18 @@ class StudioMainWindow(QMainWindow):
         self.navigation.setCurrentRow([entry[0] for entry in PAGES].index("Settings"))
         self.settings_page.show_connection()
 
+    def managed_startup_wanted(self) -> bool:
+        """True if the backend used last is the Studio-managed one and should be started now."""
+        return self.managed_panel.startup_wanted(self.preferences.profile("last_successful"))
+
+    def begin_managed_startup(self) -> None:
+        self.managed_panel.begin_startup()
+
+    def show_startup_failure(self, reason: str) -> None:
+        """The managed backend could not be brought up; show Settings where the reason and Start are."""
+        self._show_connections()
+        self.connection_hub.set_mode("simple", remember=False)
+
     def _show_about(self) -> None:
         QMessageBox.about(
             self,

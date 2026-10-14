@@ -12,7 +12,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QFileDialog,
@@ -75,6 +75,9 @@ def open_in_file_manager(path: str) -> None:
 
 
 class ManagedPanel(QWidget):
+    startup_progress = Signal(str)  # plain-language step while Studio opens
+    startup_done = Signal(bool, str)  # connected?, reason when not
+
     def __init__(self, connections: ConnectionsPanel, backend: mb.ManagedBackend,
                  store: managed.ManagedStore | None = None, vault: CredentialStore | None = None,
                  session: BackendSession | None = None,
@@ -96,6 +99,8 @@ class ManagedPanel(QWidget):
         self._issuer: mb.CredentialIssuer | None = None
         self._connect_when_ready = False
         self._restart = False
+        self._starting_up = False  # Studio is opening and bringing the backend up
+        self._startup_connecting = False
         self._notice = ""  # a message about the last action; replaces the backend's own detail
         self.settings = self.store.load()
         if not self.settings.folder:
@@ -108,6 +113,7 @@ class ManagedPanel(QWidget):
         self.session.changed.connect(self._update)
         self.folder_edit.setText(self.settings.folder)
         for widget, apply in ((self.port, lambda: self.port.setValue(self.settings.port)),
+                              (self.autostart, lambda: self.autostart.setChecked(self.settings.autostart)),
                               (self.stop_on_exit, lambda: self.stop_on_exit.setChecked(self.settings.stop_on_exit))):
             widget.blockSignals(True)  # showing saved values is not a change to save
             apply()
@@ -188,6 +194,10 @@ class ManagedPanel(QWidget):
         port_row.addWidget(self.port)
         port_row.addStretch(1)
         box.addLayout(port_row)
+        self.autostart = QCheckBox("Start the backend and connect when Studio opens")
+        self.autostart.setToolTip("Applies when this was the backend you used last.")
+        self.autostart.toggled.connect(self._autostart_changed)
+        box.addWidget(self.autostart)
         self.stop_on_exit = QCheckBox("Stop the backend when Studio closes")
         self.stop_on_exit.toggled.connect(self._exit_setting_changed)
         box.addWidget(self.stop_on_exit)
@@ -294,6 +304,10 @@ class ManagedPanel(QWidget):
         self.backend.configure(self.settings.folder, self.settings.port)
         self._update()
 
+    def _autostart_changed(self, checked: bool) -> None:
+        self.settings.autostart = bool(checked)
+        self._persist()
+
     def _exit_setting_changed(self, checked: bool) -> None:
         self.settings.stop_on_exit = bool(checked)
         self._persist()
@@ -325,6 +339,7 @@ class ManagedPanel(QWidget):
             have = bool(self.vault.get(profile.id))
         except Exception as exc:  # keyring, disk or URL validation problems; shown, never raised
             self._say(f"Could not prepare the connection: {exc}")
+            self._startup_finish(False, f"Could not prepare the connection: {exc}")
             return
         if have:
             then()
@@ -343,11 +358,13 @@ class ManagedPanel(QWidget):
             issuer.deleteLater()
         if token is None:
             self._say(message or "A credential could not be created.")
+            self._startup_finish(False, message or "A credential could not be created.")
             return
         try:
             self.vault.set(profile_id, token)
         except (ValueError, RuntimeError) as exc:
             self._say(str(exc))
+            self._startup_finish(False, str(exc))
             return
         self._notice = ""
         self._update()
@@ -356,7 +373,11 @@ class ManagedPanel(QWidget):
     def _backend_ready(self) -> None:
         if self._connect_when_ready:
             self._connect_when_ready = False
-            self.connections.connect_managed()
+            if self._starting_up:
+                self._startup_connecting = True
+                self.startup_progress.emit("Connecting to the local backend…")
+            if not self.connections.connect_managed() and self._starting_up:
+                self._startup_finish(False, "Studio could not start the connection.")
 
     def stop(self) -> None:
         self._restart = False
@@ -398,6 +419,44 @@ class ManagedPanel(QWidget):
         self._connect_when_ready = again
         self._prepare_credential(then=self._backend_ready if again else self._update)
 
+    # ---- opening Studio ---------------------------------------------------------------
+
+    def startup_wanted(self, last_profile_id: str) -> bool:
+        """True when the backend Studio used last was the managed one and starting it is allowed."""
+        profile = self.connections.managed_profile()
+        return bool(self.settings.autostart and profile is not None and profile.id == last_profile_id
+                    and managed.check_folder(self.settings.folder).ok)
+
+    def begin_startup(self) -> None:
+        """Bring the managed backend up (if it is not already) and connect, reporting through ``startup_done``."""
+        if self._starting_up:
+            return
+        self._starting_up, self._startup_connecting = True, False
+        self.backend.refresh()
+        state = self.backend.state
+        if state in (mb.STOPPED, mb.CRASHED, mb.ADOPTED):
+            self.startup_progress.emit("Checking the local backend…" if state == mb.ADOPTED
+                                       else "Starting the local backend…")
+            self.start()
+            if not self._starting_up:
+                return
+            if self._issuer is not None and self._issuer.busy:
+                self.startup_progress.emit("Preparing the backend credential…")
+        elif state == mb.RUNNING:
+            self._connect_when_ready = True
+            self._backend_ready()
+        else:
+            self._startup_finish(False, self.backend.detail)
+
+    def _startup_finish(self, ok: bool, reason: str = "") -> None:
+        if not self._starting_up:
+            return
+        self._starting_up = self._startup_connecting = False
+        if not ok and reason:
+            self._notice = reason
+            self._update()
+        self.startup_done.emit(ok, reason)
+
     # ---- state ------------------------------------------------------------------------
 
     def _disconnect_if_managed(self) -> None:
@@ -410,8 +469,10 @@ class ManagedPanel(QWidget):
         self._notice = text
         self._update()
 
-    def _state_changed(self, state: str, _detail: str) -> None:
+    def _state_changed(self, state: str, detail: str) -> None:
         self._notice = ""
+        if self._starting_up and state in (mb.CRASHED, mb.ERROR, mb.PORT_BUSY):
+            self._startup_finish(False, detail)
         if state in (mb.STOPPING, mb.STOPPED, mb.CRASHED, mb.ERROR):
             self._disconnect_if_managed()
         if state in (mb.STOPPING, mb.CRASHED, mb.ERROR):
@@ -425,6 +486,12 @@ class ManagedPanel(QWidget):
         profile = self.connections.managed_profile()
         info = self.session.info
         mine = profile is not None and info is not None and info.profile_id == profile.id
+        if self._starting_up:
+            if text == "BACKEND CONNECTED" and mine:
+                self._startup_finish(True)
+            elif text in ("BACKEND UNAUTHORIZED", "BACKEND INCOMPATIBLE", "BACKEND IDENTITY MISMATCH") or \
+                    (text == "BACKEND OFFLINE" and self._startup_connecting):
+                self._startup_finish(False, CONNECTION_TEXT.get(text, "The connection failed."))
         if text == "BACKEND CONNECTED" and not mine:
             self.connection_line.setText("")
         else:

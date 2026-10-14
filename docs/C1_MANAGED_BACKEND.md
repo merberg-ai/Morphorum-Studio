@@ -56,3 +56,28 @@ Studio's config folder (next to `connections.json`): `managed.json` (folder, por
 8. With a backend already running on 7866 that Studio did not start: Simple shows "Port in use"; changing the port enables Start.
 9. Advanced still connects to your usual saved backend exactly as before and does not list the managed profile.
 10. Windows Firewall does not prompt (loopback only).
+
+## Opening Studio with the managed backend (C1b)
+If the backend you used last is the Studio-managed one, Studio brings it up while the splash screen is showing, so the window
+opens already connected:
+
+1. Studio checks the managed folder and what is on the port.
+2. If nothing is running it starts the backend (creating a credential first if there is none); if a backend from an earlier
+   session is still running it connects to it; if something else owns the port, or the backend crashes, it stops waiting.
+3. The splash shows the real step ("Starting the local backend…", "Preparing the backend credential…", "Connecting to the local
+   backend…") and the window appears once Studio is connected. The wait is capped at about 100 seconds.
+4. If it could not be done, the window opens on Settings > Backend connection > Simple, which shows the reason and the Start button.
+   Nothing is retried in a loop.
+
+It only happens when the managed backend was the last one you connected to (connecting to a remote backend changes that), and
+it can be turned off with **Start the backend and connect when Studio opens** in the Simple view (on by default). With the
+splash turned off in Desktop preferences there is nothing to wait behind, so the window opens at once and the backend comes up
+in the background.
+
+### Added to the Windows checklist
+11. Close Studio with the managed backend running (stop-on-close on). Reopen: the splash says "Starting the local backend…", then
+    the window opens connected, with no clicks needed.
+12. Close Studio with stop-on-close off, then reopen: the splash finds the running backend and connects; Stop stays disabled.
+13. Put another program on the port (or start the backend by hand on 7866) and reopen: the window opens on Settings showing "Port in use".
+14. Untick "Start the backend and connect when Studio opens", reopen: the window opens at once and stays disconnected.
+15. Connect to a remote backend in Advanced, close, reopen: the managed backend is not started.

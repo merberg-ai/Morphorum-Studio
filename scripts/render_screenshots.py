@@ -139,6 +139,8 @@ def main() -> int:
                     settle(900)  # recent projects and thumbnails load when Home becomes active
                 if connected and name == "Render Queue":
                     settle(700)  # the queue loads when its page becomes active
+                if connected and name == "Motion Lab":
+                    settle(600)  # the graph loads when its page becomes active
                 if connected and name == "Projects":
                     window.projects_page._select("alpha")
                     settle(300)

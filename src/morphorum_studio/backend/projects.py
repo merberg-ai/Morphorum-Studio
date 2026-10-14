@@ -67,6 +67,7 @@ class ProjectDetail:
     prompt_keyframes: int = 0
     first_prompt: str | None = None
     motion_layers: int = 0
+    audio_layers: int = 0
     hybrid_enabled: bool = False
 
     @property
@@ -148,6 +149,8 @@ def parse_project(payload: Any) -> ProjectDetail:
         prompt_keyframes=len(prompts),
         first_prompt=first,
         motion_layers=len(layers) if isinstance(layers, list) else 0,
+        audio_layers=sum(1 for x in layers if isinstance(x, Mapping) and x.get("type") == "audio")
+        if isinstance(layers, list) else 0,
         hybrid_enabled=hybrid.get("enabled") is True,
     )
 

@@ -52,7 +52,9 @@ jobs:
       - name: Render UI screenshots (offscreen)
         continue-on-error: true
         if: matrix.os == 'ubuntu-latest'
-        run: python scripts/render_screenshots.py ui-screenshots
+        run: |
+          python scripts/render_screenshots.py ui-screenshots
+          QT_SCALE_FACTOR=1.75 python scripts/render_screenshots.py ui-screenshots/dpi175 --sizes 1200x760,880x560
       - name: Upload UI screenshots
         if: matrix.os == 'ubuntu-latest' && always()
         uses: actions/upload-artifact@v4
@@ -67,7 +69,8 @@ jobs:
         run: |
           set -e
           dir=$(mktemp -d)
-          cp -r ui-screenshots/*.png "$dir"/ || exit 0
+          cp -r ui-screenshots/. "$dir"/ || exit 0
+          rm -f "$dir"/prefs.ini "$dir"/dpi175/prefs.ini
           echo "${GITHUB_SHA}" > "$dir/SOURCE_SHA"
           cd "$dir"
           git init -q

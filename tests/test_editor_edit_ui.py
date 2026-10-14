@@ -51,6 +51,8 @@ class Client:
     def send_json(self, method, path, body=None, *, if_match=None, idempotency_key=None, max_bytes=0):
         if path.endswith("/schedule-series"):
             return {"field": body["field"], "samples": [{"frame": 0, "value": 1.0}, {"frame": 47, "value": 2.0}]}, None
+        if path.endswith("/validate-schedules"):
+            return getattr(self.b, "validation", {"valid": True, "issues": []}), None
         if path.endswith("/resolve-timeline"):
             return resolved_payload(body["start_frame"]), None
         self.b.writes.append((method, path, body))

@@ -34,6 +34,7 @@ from morphorum_studio.ui.render_service import RenderService
 from morphorum_studio.ui.video_service import VideoService
 from morphorum_studio.ui.console_service import ConsoleService
 from morphorum_studio.ui.editor_page import EditorPage
+from morphorum_studio.ui.import_service import ImportService
 from morphorum_studio.ui.timeline_service import TimelineService
 from morphorum_studio.ui.console_page import ConsolePage
 from morphorum_studio.ui.projects_service import ProjectsService
@@ -186,6 +187,7 @@ class StudioMainWindow(QMainWindow):
             / "video-playback", self)
         self.console_service = ConsoleService(self.session, self)
         self.timeline_service = TimelineService(self.session, self)
+        self.import_service = ImportService(self.session, self)
         self.pages = QStackedWidget()
         self.pages.setObjectName("pages")
         for page_name, title, description in PAGES:
@@ -198,7 +200,7 @@ class StudioMainWindow(QMainWindow):
             elif page_name == "Projects":
                 self.projects_page = ProjectsPage(
                     self.session, self.projects_service, self.preferences, self.render_service,
-                    self.video_service,
+                    self.video_service, self.import_service,
                 )
                 self.projects_page.open_connections.connect(
                     lambda: self.navigation.setCurrentRow(names.index("Connections"))

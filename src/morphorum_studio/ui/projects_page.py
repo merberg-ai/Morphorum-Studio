@@ -92,10 +92,12 @@ class ProjectsPage(QFrame):
     open_connections = Signal()
 
     def __init__(self, session: BackendSession, service: ProjectsService,
-                 preferences: StudioPreferences, render_service=None, video_service=None) -> None:
+                 preferences: StudioPreferences, render_service=None, video_service=None,
+                 import_service=None) -> None:
         super().__init__()
         self._render_service = render_service
         self._video_service = video_service
+        self._import_service = import_service
         self.setObjectName("pageSurface")
         self._session = session
         self._service = service
@@ -146,10 +148,13 @@ class ProjectsPage(QFrame):
         head.setSpacing(8)
         self.new_button = QPushButton("New project")
         self.new_button.setObjectName("primaryAction")
+        self.import_button = QPushButton("Import Deforum…")
+        self.import_button.setVisible(self._import_service is not None)
         self.refresh_button = QPushButton("Refresh")
-        for button in (self.new_button, self.refresh_button):
+        for button in (self.new_button, self.import_button, self.refresh_button):
             button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         head.addWidget(self.new_button)
+        head.addWidget(self.import_button)
         head.addStretch(1)
         head.addWidget(self.refresh_button)
         lbox.addLayout(head)
@@ -280,6 +285,7 @@ class ProjectsPage(QFrame):
         self.recent_combo.activated.connect(self._recent_chosen)
         self.refresh_button.clicked.connect(self._service.refresh)
         self.new_button.clicked.connect(self._new_project)
+        self.import_button.clicked.connect(self._import_deforum)
         self.connect_button.clicked.connect(self.open_connections)
         self.name_edit.textChanged.connect(self._edited)
         self.notes_edit.textChanged.connect(self._edited)
@@ -515,6 +521,7 @@ class ProjectsPage(QFrame):
         valid = bool(self.name_edit.text().strip()) and len(self.notes_edit.toPlainText()) <= MAX_NOTES
         has_project = self._loaded is not None
         self.new_button.setEnabled(available and not busy)
+        self.import_button.setEnabled(available and not busy)
         self.refresh_button.setEnabled(available)
         self.save_button.setEnabled(available and not busy and dirty and valid)
         self.revert_button.setEnabled(dirty and not busy)
@@ -570,6 +577,23 @@ class ProjectsPage(QFrame):
             self, "New project", "Project name:", QLineEdit.EchoMode.Normal, "Untitled Animation")
         if accepted and name.strip():
             self._service.create(name)
+
+    def _import_deforum(self) -> None:
+        if self._import_service is None:
+            return
+        if self.has_unsaved_changes() and not self._confirm_discard():
+            return
+        from morphorum_studio.ui.deforum_dialog import DeforumImportDialog
+        dialog = DeforumImportDialog(self._import_service, self)
+        dialog.project_created.connect(self._imported)
+        self.import_dialog = dialog
+        dialog.open()
+
+    def _imported(self, project_id: str) -> None:
+        self._loaded = None
+        self._selected = None
+        self._service.refresh()
+        self._select(project_id)
 
     def _created(self, detail: ProjectDetail) -> None:
         self._loaded = None  # Anything unsaved was already discarded when the user chose New.

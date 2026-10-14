@@ -11,6 +11,7 @@ from PySide6.QtCore import QObject, Signal
 
 from morphorum_studio.backend.client import BackendClient, BackendError
 from morphorum_studio.backend.session import BackendSession
+from morphorum_studio.backend.validation import ValidationApi
 from morphorum_studio.backend.timeline import Edit, EditApi, Op, Series, Timeline, TimelineApi
 from morphorum_studio.ui.dashboard_service import Runner, thread_pool_runner
 
@@ -21,6 +22,7 @@ class TimelineService(QObject):
     resolved = Signal(object)  # Resolved
     edited = Signal(object)  # Timeline reloaded from the backend after an edit, undo or redo
     history_changed = Signal()
+    validated = Signal(object)  # Validation | None (None: could not be checked)
     conflict = Signal(str)  # the project changed elsewhere; edits were refused
     failed = Signal(str, str, str)  # operation, code, message
     busy_changed = Signal(bool)
@@ -39,6 +41,7 @@ class TimelineService(QObject):
         self._raw: dict | None = None
         self._series: dict[str, Series | None] = {}
         self._project_id: str | None = None
+        self._validate_seq = 0
         self._etag: str | None = None
         self._undo: list[Edit] = []
         self._redo: list[Edit] = []
@@ -115,6 +118,29 @@ class TimelineService(QObject):
             self.loaded.emit(self.timeline)
 
         self._run(client, work, done)
+
+    # -- validation (S4.3) --------------------------------------------------------------
+
+    def validate(self) -> None:
+        """Ask the backend whether the saved project's schedules are valid (read-only)."""
+        raw = self._raw
+        client = self._client()
+        if raw is None or client is None:
+            return
+        seq, epoch = self._seq, self._session.epoch
+        self._validate_seq += 1
+        check = self._validate_seq
+
+        def done(result, error):
+            if self._stale(epoch, seq) or check != self._validate_seq:
+                return
+            if error:
+                self.failed.emit("validate", *error)
+                self.validated.emit(None)
+            else:
+                self.validated.emit(result)
+
+        self._run(client, lambda c: ValidationApi(c).check(raw), done)
 
     # -- evaluation ---------------------------------------------------------------------
 

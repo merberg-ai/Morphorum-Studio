@@ -197,3 +197,6 @@ See docs/S4_1_TIMELINE.md. From dev-ui (S1-S3.3 + console merged). Read-only Edi
 
 ## S4.2 keyframe editing (branch feature/studio-s4-2-keyframes)
 See docs/S4_2_KEYFRAMES.md. From dev-ui (S4.1 merged). Set/update/delete/move keyframes and interpolation via the backend track endpoints with an ETag guard before each edit, backend reload after, and Studio-side undo/redo. Awaiting CI and a physical Windows test.
+
+## S4.3 validation + Deforum import (branch feature/studio-s4-3-import-validation)
+See docs/S4_3_IMPORT_VALIDATION.md. From dev-ui (S4.2 merged). Backend schedule validation shown in the Editor and used as a render pre-flight; Deforum settings preview/create as a new project. Awaiting CI and a physical Windows test.

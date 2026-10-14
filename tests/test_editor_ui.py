@@ -23,6 +23,7 @@ class Backend:
     def __init__(self):
         self.calls = []
         self.fail = {}
+        self.validation = {"valid": True, "issues": []}
 
 
 class Client:
@@ -49,6 +50,8 @@ class Client:
                 raise self.b.fail["series"]
             return {"field": body["field"], "interpolation": "linear",
                     "samples": [{"frame": 0, "value": 1.0}, {"frame": 47, "value": 1.4}]}, None
+        if path.endswith("/validate-schedules"):
+            return getattr(self.b, "validation", {"valid": True, "issues": []}), None
         if path.endswith("/resolve-timeline"):
             return resolved_payload(body["start_frame"]), None
         raise BackendError("NOT_FOUND", "no route", 404)
@@ -164,3 +167,26 @@ def test_timeline_view_hit_testing_and_keyboard():
     assert frames == [1, 11]
     kind, item = view._row_at(RULER_H + HEAD_H + 2)
     assert kind == "track" and item.id == "prompts.positive"
+
+
+def test_validation_issues_are_listed_and_jump_to_the_track():
+    backend, session, projects, service, page = make()
+    backend.validation = {"valid": False, "issues": [
+        {"field": "motion.zoom", "severity": "error", "message": "zoom must stay above 0"},
+        {"field": "tracks.prompts.positive", "severity": "warning", "message": "LoRA not found"}]}
+    open_demo(page, projects)
+    assert "1 schedule error" in page.check_label.text() and page.issues.count() == 2
+    assert "zoom must stay above 0" in page.issues.item(0).text()
+    page._issue_chosen(page.issues.item(0))
+    assert page._track_id == "camera_2d.zoom" and page.keys.rowCount() == 2
+    page._issue_chosen(page.issues.item(1))
+    assert page._track_id == "prompts.positive"
+
+
+def test_clean_validation_and_unreachable_validation():
+    backend, session, projects, service, page = make()
+    open_demo(page, projects)
+    assert page.check_label.text() == "Schedules are valid." and page.issues.count() == 0
+    service._raw = None
+    service.validate()  # nothing to check: no change, no crash
+    assert page.check_label.text() == "Schedules are valid."

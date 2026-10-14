@@ -55,6 +55,7 @@ class Backend:
         self.calls, self.posts = [], []
         self.renders = {}  # id -> list of states (last repeats)
         self.fail_post = None
+        self.validation = {"valid": True, "issues": []}
         self.journal_during_post = None
         self.image, self.gif = png(), gif()
 
@@ -83,6 +84,8 @@ class Client:
 
     def send_json(self, method, path, body=None, *, if_match=None, idempotency_key=None, max_bytes=0):
         self.b.calls.append((method, path, body, idempotency_key))
+        if path.endswith("/validate-schedules"):
+            return self.b.validation, None
         if path.endswith("/cancel"):
             rid = path.split("/")[-2]
             self.b.renders[rid] = [render_json(rid, "cancelled", 2)]
@@ -405,3 +408,14 @@ def test_page_and_window_wiring(tmp_path):
         assert [p[0] for p in PAGES].count("Projects") == 1
     finally:
         window.close()
+
+
+def test_start_is_blocked_by_schedule_errors_before_anything_is_journalled(tmp_path):
+    backend, session, service, journal, _ = make(tmp_path, card=False)
+    backend.validation = {"valid": False, "issues": [
+        {"field": "motion.zoom", "severity": "error", "message": "zoom must be positive"}]}
+    failures = []
+    service.failed.connect(lambda *a: failures.append(a))
+    service.start("demo")
+    assert not backend.posts and journal.entries() == []
+    assert failures[0][1] == "INVALID_REQUEST" and "zoom must be positive" in failures[0][2]

@@ -17,6 +17,7 @@ from morphorum_studio.backend.images import DEFINITIVE, JournalEntry, Submission
 from morphorum_studio.backend.projects import ProjectsApi
 from morphorum_studio.backend.renders import RenderApi, RenderJob
 from morphorum_studio.backend.session import BackendSession
+from morphorum_studio.backend.validation import ValidationApi, summary
 from morphorum_studio.ui.dashboard_service import Runner, thread_pool_runner
 
 POLL_MS = 1000
@@ -132,6 +133,15 @@ class RenderService(QObject):
 
         def work(c: BackendClient):
             project = ProjectsApi(c).raw(project_id)
+            try:
+                verdict = ValidationApi(c).check(project)
+            except BackendError as exc:
+                if exc.code != "NOT_FOUND":  # an older backend without the endpoint just skips this
+                    raise
+            else:
+                if not verdict.valid:
+                    raise BackendError("INVALID_REQUEST",
+                                       "Fix the schedule errors before rendering: " + summary(verdict))
             entry = self._journal.begin(profile, {"project": project}, kind=KIND)
             held["entry"] = entry
             job = RenderApi(c).submit(entry)

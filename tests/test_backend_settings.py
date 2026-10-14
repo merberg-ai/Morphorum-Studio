@@ -94,7 +94,20 @@ def sync_runner(client, fn, callback):
     callback(result, error)
 
 
-_KEEP = []  # pages stay reachable until the process exits; see tests/conftest.py
+_MADE = []
+
+
+@pytest.fixture(autouse=True)
+def _destroy_widgets():
+    """Delete each test's Qt objects before the next test, while Qt is healthy (see tests/conftest.py)."""
+    yield
+    from shiboken6 import delete, isValid
+
+    while _MADE:
+        for obj in _MADE.pop():
+            if isValid(obj):
+                delete(obj)
+    QApplication.processEvents()
 
 
 def rig(url="http://10.0.0.5:7866", connect=True, chosen=""):
@@ -106,7 +119,7 @@ def rig(url="http://10.0.0.5:7866", connect=True, chosen=""):
     if connect:
         info = SessionInfo("p1", "Workshop", url, "0.1.0", "backend-only", "i1", "b1", {})
         session.connected(info, "t")
-    _KEEP.append((client, session, service, page))
+    _MADE.append((page, service, session))
     return client, session, service, page
 
 

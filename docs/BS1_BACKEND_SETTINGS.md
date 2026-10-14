@@ -35,3 +35,8 @@ with a warning; the access token is never displayed.
 4. Toggle both memory options, Save, open the web UI settings page: the same values appear. Revert discards unsaved edits.
 5. Connect to a remote backend: no Browse buttons; everything else works.
 6. Disconnect: the tab says to connect. Reconnect: Reload fills it.
+
+## Known gap
+Folder text boxes carry a tooltip but no accessible name: setting one on an editable `QLineEdit` crashed the Windows test
+process at exit (found by bisecting CI). The S6 accessibility step should label them another way (a visible label with a
+buddy).

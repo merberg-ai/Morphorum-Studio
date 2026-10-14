@@ -169,11 +169,17 @@ def test_loads_when_shown_active_and_builds_the_form():
     client, session, service, page = rig(connect=False)
     info = SessionInfo("p1", "W", "http://10.0.0.5:7866", "0.1.0", "backend-only", "i1", "b1", {})
     session.connected(info, "t")  # visible page + connected -> loads
-    assert page.original is not None
+    assert page.original is not None and page.form.isVisibleTo(page)
+    edits = [e.text() for e in page.form.findChildren(QLineEdit)]
+    assert r"D:\models\sdxl" in edits and r".\ckpts\z-image" in edits and r"D:\loras" in edits
+    boxes = {b.text(): b.isChecked() for b in page.form.findChildren(QCheckBox)}
+    assert boxes == {"Unload after generation": False, "SDXL VAE tiling": True}
+    assert not page.save_button.isEnabled()
+    messages = " ".join(label.text() for label in page.form.findChildren(type(page.status_line)))
+    assert "Folder found." in messages and "does not exist" in messages
 
 
 
-@pytest.mark.skip(reason='bisect')
 def test_edit_save_sends_only_the_change_then_rescan():
     client, session, service, page = rig()
     box = next(b for b in page.form.findChildren(QCheckBox) if b.text() == "Unload after generation")
@@ -186,7 +192,6 @@ def test_edit_save_sends_only_the_change_then_rescan():
     assert client.scans == 1 and "12 model(s)" in page.status_line.text() and "No folder for flux." in page.status_line.text()
 
 
-@pytest.mark.skip(reason='bisect')
 def test_add_remove_and_revert_folders():
     client, session, service, page = rig()
     add = page._rows[0]["add"]  # SDXL checkpoint folders
@@ -199,7 +204,6 @@ def test_add_remove_and_revert_folders():
     assert not page.dirty and r"E:\new" not in [e.text() for e in page.form.findChildren(QLineEdit)]
 
 
-@pytest.mark.skip(reason='bisect')
 def test_check_asks_the_backend_and_shows_the_answer():
     client, session, service, page = rig()
     from PySide6.QtWidgets import QPushButton
@@ -208,7 +212,6 @@ def test_check_asks_the_backend_and_shows_the_answer():
     assert client.checks == [r"D:\models\sdxl"]
 
 
-@pytest.mark.skip(reason='bisect')
 def test_browse_only_for_a_backend_on_this_pc():
     from PySide6.QtWidgets import QPushButton
     _c, _s, _svc, remote = rig(url="http://10.0.0.5:7866")
@@ -221,7 +224,6 @@ def test_browse_only_for_a_backend_on_this_pc():
     assert local.dirty
 
 
-@pytest.mark.skip(reason='bisect')
 def test_failures_are_explained_and_a_disconnect_clears_the_form():
     client, session, service, page = rig()
     client.fail = "backend is busy"

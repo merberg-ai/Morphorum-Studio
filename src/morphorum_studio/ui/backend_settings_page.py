@@ -164,6 +164,9 @@ class BackendSettingsPage(QWidget):
         draft = self.draft
         if draft is None:
             return
+        for family in draft.families:
+            for kind, folders in draft.paths.get(family.id, {}).items():
+                self._folder_card(family.id, f"{family.label} {KIND_TITLE.get(kind, kind)}", kind, folders)
         managed = [f for f in draft.families if f.managed]
         if managed:
             _card, box = self._card(
@@ -256,7 +259,7 @@ class BackendSettingsPage(QWidget):
         row = QHBoxLayout()
         row.setSpacing(8)
         edit = QLineEdit(value)
-        pass  # edit.setAccessibleName(name)
+        edit.setToolTip(name)  # an accessible name on an editable field crashes Qt on Windows at exit
         edit.setPlaceholderText("Folder on the backend's computer")
         edit.textEdited.connect(on_change)
         row.addWidget(edit, 1)

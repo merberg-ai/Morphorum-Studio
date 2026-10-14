@@ -75,8 +75,12 @@ class PreviewDialog(QDialog):
 
 
 class RenderCard(QFrame):
-    def __init__(self, service: RenderService, video_service=None) -> None:
+    def __init__(self, service: RenderService, video_service=None, compact: bool = False) -> None:
+        """``compact``: the host shows rendered frames itself (the Timeline player), so this card
+        keeps its controls, status, history and saving but hides its own picture and slider and
+        saves whichever frame the host reports with ``set_playhead``."""
         super().__init__()
+        self._compact = compact
         self.setObjectName("card")
         self._video_service = video_service
         self._service = service
@@ -188,6 +192,9 @@ class RenderCard(QFrame):
             self.video_panel = VideoPanel(self._video_service)
             box.addWidget(self.video_panel)
 
+        if self._compact:
+            for widget in (self.frame_view, self.slider, self.frame_label, self.follow):
+                widget.setVisible(False)
         self.start_button.clicked.connect(self._start)
         self.cancel_button.clicked.connect(self._cancel)
         self.resume_button.clicked.connect(self._resume)
@@ -213,7 +220,8 @@ class RenderCard(QFrame):
         self.follow.setChecked(True)
         self._pixmaps.clear()
         self._requested.clear()
-        self._wanted_frame = None
+        if not self._compact:
+            self._wanted_frame = None
         self._pending = []
         self.render_combo.clear()
         self._show_idle()
@@ -254,7 +262,11 @@ class RenderCard(QFrame):
         self.cancel_button.setEnabled(ready and active and not (job and job.cancel_requested))
         self.resume_button.setEnabled(ready and not busy and bool(job and job.final and job.resumable))
         has_frame = bool(job and job.latest_frame is not None)
-        self.save_frame_button.setEnabled(ready and has_frame)
+        saveable = has_frame
+        if self._compact:
+            saveable = bool(has_frame and self._wanted_frame is not None
+                            and self._wanted_frame <= (job.latest_frame or 0))
+        self.save_frame_button.setEnabled(ready and saveable)
         self.play_button.setEnabled(ready and bool(job and job.has_preview))
         self.save_preview_button.setEnabled(ready and bool(job and job.has_preview))
         self.slider.setEnabled(has_frame)
@@ -332,7 +344,8 @@ class RenderCard(QFrame):
         self._job = job
         self._follow = True
         self.follow.setChecked(True)
-        self._wanted_frame = None
+        if not self._compact:
+            self._wanted_frame = None
         self._show_job(job)
         if job.active and self._service.watched != job.id:
             self._service.watch(job.id)
@@ -389,9 +402,15 @@ class RenderCard(QFrame):
 
     # -- frames -----------------------------------------------------------------------------
 
+    def set_playhead(self, frame: int) -> None:
+        """Compact mode: the frame "Save frame…" will save."""
+        if self._compact and frame != self._wanted_frame:
+            self._wanted_frame = frame
+            self._update()
+
     def _want(self, frame: int) -> None:
         job = self._job
-        if job is None:
+        if job is None or self._compact:
             return
         self._wanted_frame = frame
         total = f" of {job.total_frames}" if job.total_frames else ""

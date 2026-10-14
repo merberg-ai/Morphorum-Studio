@@ -221,10 +221,11 @@ class StudioMainWindow(QMainWindow):
                 self.pages.addWidget(self.home_page)
             elif page_name == "Projects":
                 self.projects_page = ProjectsPage(
-                    self.session, self.projects_service, self.preferences, self.render_service,
-                    self.video_service, self.import_service,
+                    self.session, self.projects_service, self.preferences, self.import_service,
                     self.setup_service, self.models_service, self.library_service,
+                    can_open_timeline=True,
                 )
+                self.projects_page.open_timeline.connect(self._open_in_timeline)
                 self.projects_page.open_connections.connect(
                     self._show_connections
                 )
@@ -236,7 +237,8 @@ class StudioMainWindow(QMainWindow):
                 )
                 self.pages.addWidget(self.image_lab_page)
             elif page_name == "Editor":
-                self.editor_page = EditorPage(self.session, self.projects_service, self.timeline_service)
+                self.editor_page = EditorPage(self.session, self.projects_service, self.timeline_service,
+                                              self.render_service, self.video_service)
                 self.pages.addWidget(self.editor_page)
             elif page_name == "Console":
                 self.console_page = ConsolePage(self.session, self.console_service, self.preferences)
@@ -377,6 +379,10 @@ class StudioMainWindow(QMainWindow):
             Command("About Morphorum Studio", "", self._show_about, keywords="version help"),
         ]
         return commands
+
+    def _open_in_timeline(self, project_id: str) -> None:
+        self.navigation.setCurrentRow([entry[0] for entry in PAGES].index("Editor"))
+        self.editor_page.open_project(project_id)
 
     def _open_project_from_home(self, project_id: str) -> None:
         self.navigation.setCurrentRow([entry[0] for entry in PAGES].index("Projects"))

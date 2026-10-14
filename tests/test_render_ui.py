@@ -402,8 +402,10 @@ def test_page_and_window_wiring(tmp_path):
     settings = QSettings(str(tmp_path / "w.ini"), QSettings.Format.IniFormat)
     window = StudioMainWindow(preferences=StudioPreferences(settings), journal_dir=tmp_path / "j")
     try:
-        page = window.projects_page
+        page = window.editor_page
         assert page.render_card is not None and page.render_card._service is window.render_service
+        assert page.render_card._compact and page._render_service is window.render_service
+        assert not hasattr(window.projects_page, "render_card")
         assert window.render_service._journal is window.image_service._journal
         assert [p[0] for p in PAGES].count("Projects") == 1
     finally:

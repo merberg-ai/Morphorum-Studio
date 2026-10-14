@@ -44,7 +44,7 @@ jobs:
           python - <<'PY'
           t = open("pytest.log", encoding="utf-8", errors="replace").read()
           lines = [l for l in t.splitlines() if l.startswith(("FAILED", "ERROR", "E  "))][:40]
-          lines += ["--- last log lines ---"] + t.splitlines()[-140:]
+          lines += ["--- last log lines ---"] + t.splitlines()[-25:]
           print("::error title=pytest failures::" + "%0A".join(l.replace("%", "%25")[:300] for l in lines))
           PY
       - name: Verify clean wheel installation and bundled splash

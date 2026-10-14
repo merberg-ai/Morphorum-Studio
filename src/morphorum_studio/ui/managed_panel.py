@@ -1,8 +1,9 @@
 """Simple connection mode: Studio runs a Morphorum backend on this PC and connects to it.
 
-This step manages a Morphorum folder that is already installed. The panel never offers a
-control it cannot honour: there is no install button yet. Studio stops only a backend it
-started itself, and the credential it uses is a revocable client token kept in the OS keyring.
+The panel manages a Morphorum folder: it can install one (by running the backend's own
+installer after the person agrees), start and stop it, and connect to it. The panel never
+offers a control it cannot honour. Studio stops only a backend it started itself, and the
+credential it uses is a revocable client token kept in the OS keyring.
 """
 from __future__ import annotations
 
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPlainTextEdit,
+    QProgressBar,
     QPushButton,
     QSizePolicy,
     QSpinBox,
@@ -34,6 +36,7 @@ from morphorum_studio.backend import managed
 from morphorum_studio.backend.credentials import CredentialStore
 from morphorum_studio.backend.session import BackendSession
 from morphorum_studio.ui import managed_backend as mb
+from morphorum_studio.ui import managed_install as mi
 from morphorum_studio.ui.connections_panel import COLUMN_WIDTH, ConnectionsPanel, _FitScroll
 
 STATE_CHIP = {
@@ -86,6 +89,8 @@ class ManagedPanel(QWidget):
                  ask_exit: Callable[[int], str] | None = None,
                  choose_folder: Callable[[QWidget, str], str] | None = None,
                  open_folder: Callable[[str], None] = open_in_file_manager,
+                 installer: mi.InstallDriver | None = None,
+                 confirm_close_install: Callable[[], bool] | None = None,
                  parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.connections, self.backend = connections, backend
@@ -96,6 +101,8 @@ class ManagedPanel(QWidget):
         self._ask_exit = ask_exit or self._ask_exit_dialog
         self._choose_folder = choose_folder or self._choose_folder_dialog
         self._open_folder = open_folder
+        self.installer = installer or mi.InstallDriver()
+        self._confirm_close_install = confirm_close_install or self._confirm_close_install_dialog
         self._issuer: mb.CredentialIssuer | None = None
         self._connect_when_ready = False
         self._restart = False
@@ -110,6 +117,10 @@ class ManagedPanel(QWidget):
         backend.log_line.connect(self._append_log)
         backend.ready.connect(self._backend_ready)
         connections.status_changed.connect(self._connection_changed)
+        self.installer.log_line.connect(self._append_log)
+        self.installer.stage.connect(self._install_stage)
+        self.installer.state_changed.connect(self._install_state)
+        self.installer.finished.connect(self._install_finished)
         self.session.changed.connect(self._update)
         self.folder_edit.setText(self.settings.folder)
         for widget, apply in ((self.port, lambda: self.port.setValue(self.settings.port)),
@@ -164,8 +175,8 @@ class ManagedPanel(QWidget):
         layout.addWidget(_label("BACKEND CONNECTIONS / STUDIO", "sectionCaption", wrap=False))
         layout.addWidget(_label("Backend connection", "pageHeading", wrap=False))
         layout.addWidget(_label(
-            "Studio runs Morphorum on this PC and connects to it. Choose a folder where Morphorum is "
-            "installed. Installing a new copy from Studio is not available yet.", "pageDescription"))
+            "Studio runs Morphorum on this PC and connects to it. Choose the folder where Morphorum is "
+            "installed, or let Studio install it for you.", "pageDescription"))
 
         folder_card, box = self._card("Morphorum folder")
         row = QHBoxLayout()
@@ -204,6 +215,44 @@ class ManagedPanel(QWidget):
         box.addWidget(_label(
             "The backend listens on this PC only. Studio stops only a backend that Studio started.", "hint"))
         layout.addWidget(folder_card)
+
+        self.install_card, ibox = self._card("Install Morphorum")
+        ibox.addWidget(_label(
+            "Studio will run Morphorum's own installer and put everything in the folder above. "
+            "Nothing is changed outside it, except that Git and FFmpeg are installed for Windows "
+            "with winget if they are missing.", "hint"))
+        for text in (
+            f"Downloads the installer from github.com/{managed.REPO} (branch {managed.DEFAULT_BRANCH}).",
+            "Downloads the Morphorum source and a Python environment with PyTorch (several GB).",
+            f"Needs at least {managed.MIN_FREE_BYTES // 1024**3} GiB free and usually takes 10 to 30 minutes.",
+            "You can cancel at any time and continue later."):
+            ibox.addWidget(_label("•  " + text, "hint"))
+        self.consent = QCheckBox("I agree to install Morphorum into this folder")
+        self.consent.toggled.connect(lambda _checked: self._update())
+        ibox.addWidget(self.consent)
+        self.install_note = _label("", "hint")
+        ibox.addWidget(self.install_note)
+        self.install_stage = _label("", "connectionDetails")
+        ibox.addWidget(self.install_stage)
+        self.install_bar = QProgressBar()
+        self.install_bar.setRange(0, 0)
+        self.install_bar.setTextVisible(False)
+        self.install_bar.setMaximumHeight(8)
+        self.install_bar.setVisible(False)
+        ibox.addWidget(self.install_bar)
+        irow = QHBoxLayout()
+        irow.setSpacing(10)
+        irow.addStretch(1)
+        self.cancel_install_button = self._fixed(QPushButton("Cancel install"), 120)
+        self.cancel_install_button.setObjectName("dangerAction")
+        self.cancel_install_button.clicked.connect(self.cancel_install)
+        self.install_button = self._fixed(QPushButton("Install Morphorum"), 160)
+        self.install_button.setObjectName("primaryAction")
+        self.install_button.clicked.connect(self.install)
+        irow.addWidget(self.cancel_install_button)
+        irow.addWidget(self.install_button)
+        ibox.addLayout(irow)
+        layout.addWidget(self.install_card)
 
         run_card, rbox = self._card("Backend")
         head = QHBoxLayout()
@@ -328,6 +377,67 @@ class ManagedPanel(QWidget):
             return
         self._connect_when_ready = True
         self._prepare_credential(then=self.backend.start)
+
+    # ---- install ----------------------------------------------------------------------
+
+    def _install_target(self) -> str:
+        return self.settings.folder or str(managed.default_folder())
+
+    def _resuming(self) -> bool:
+        folder = self._install_target()
+        return Path(folder).is_dir() and managed.is_checkout(folder) and not managed.check_folder(folder).ok
+
+    def install(self) -> None:
+        """Run the backend's installer. Only reachable once the person has ticked the consent box."""
+        if self.installer.busy or self.backend.owned or not self.consent.isChecked():
+            return
+        folder = self._install_target()
+        check = self.installer._check(folder, self.settings.port)
+        if not check.ok:
+            self.install_note.setText(" ".join(check.problems))
+            return
+        if folder != self.settings.folder:  # nothing was chosen: the default folder
+            self.settings.folder = folder
+            self.folder_edit.setText(folder)
+            self._persist()
+            self.backend.configure(folder, self.settings.port)
+        self.install_note.setText(" ".join(check.warnings))
+        self.install_stage.setText("")
+        self.log_toggle.setChecked(True)
+        self.log.clear()
+        self.installer.start(folder, managed.DEFAULT_BRANCH, self.settings.port)
+        self._update()
+
+    def cancel_install(self) -> None:
+        self.installer.cancel()
+
+    def _install_stage(self, section: str) -> None:
+        self.install_stage.setText(section)
+
+    def _install_state(self, state: str, detail: str) -> None:
+        if state in (mi.DOWNLOADING, mi.RUNNING):
+            self.install_stage.setText(detail if not self.installer.section else self.installer.section)
+        self._update()
+
+    def _install_finished(self, ok: bool, message: str) -> None:
+        self.consent.setChecked(False)
+        self.backend.configure(self.settings.folder, self.settings.port)
+        self._show_folder_check()
+        if ok:
+            self._notice = ""
+            self.install_stage.setText("")
+            self.start()  # install, then run it and connect
+        else:
+            self.install_stage.setText(message)
+            self._update()
+
+    def _confirm_close_install_dialog(self) -> bool:
+        answer = QMessageBox.question(
+            self, "Installation is running",
+            "Morphorum is still installing. Cancel the installation and close Studio? "
+            "Installing again later continues where it stopped.",
+        )
+        return answer == QMessageBox.StandardButton.Yes
 
     def _prepare_credential(self, then: Callable[[], object]) -> None:
         """Make sure Studio holds a credential for the managed backend, then continue."""
@@ -508,13 +618,24 @@ class ManagedPanel(QWidget):
         self.detail.setText(self._notice or self.backend.detail)
         owned, ready = self.backend.owned, managed.check_folder(self.settings.folder).ok
         busy_credential = self._issuer is not None and self._issuer.busy
-        can_start = ready and state in (mb.STOPPED, mb.CRASHED, mb.ERROR, mb.ADOPTED) and not busy_credential
+        can_start = ready and state in (mb.STOPPED, mb.CRASHED, mb.ERROR, mb.ADOPTED) and not busy_credential \
+            and not self.installer.busy
         self.start_button.setText("Connect" if state == mb.ADOPTED else "Start and connect")
         self.start_button.setEnabled(can_start and (state != mb.ERROR or ready))
         self.stop_button.setEnabled(owned and state in (mb.STARTING, mb.RUNNING))
         self.restart_button.setEnabled(owned and state == mb.RUNNING)
-        self.choose_button.setEnabled(not owned)
-        self.port.setEnabled(not owned)
+        installing = self.installer.busy
+        self.choose_button.setEnabled(not owned and not installing)
+        self.port.setEnabled(not owned and not installing)
+        self.install_card.setVisible(installing or not ready)
+        resuming = self._resuming()
+        self.install_button.setText("Resume install" if resuming else "Install Morphorum")
+        self.install_button.setEnabled(self.consent.isChecked() and not installing and not owned)
+        self.consent.setEnabled(not installing)
+        self.cancel_install_button.setVisible(installing)
+        self.install_button.setVisible(not installing)
+        self.install_bar.setVisible(installing)
+
         self.open_button.setEnabled(bool(self.settings.folder) and Path(self.settings.folder).is_dir())
         self.reset_button.setEnabled(ready and not busy_credential)
 
@@ -534,6 +655,10 @@ class ManagedPanel(QWidget):
 
     def close_requested(self) -> bool:
         """Called when Studio is closing. False means the person cancelled the close."""
+        if self.installer.busy:
+            if not self._confirm_close_install():
+                return False
+            self.installer.cancel()
         if not self.backend.owned:
             return True
         if not self.settings.stop_on_exit:

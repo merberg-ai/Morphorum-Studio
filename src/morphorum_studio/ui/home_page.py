@@ -247,7 +247,7 @@ class HomePage(QFrame):
             "Studio shows live GPU, memory and model information from a Morphorum backend. "
             "Rendering and models stay on the backend; nothing here needs a local GPU.",
             "hint", wrap=True))
-        self.connect_button = QPushButton("Open Connections")
+        self.connect_button = QPushButton("Open connection settings")
         self.connect_button.setObjectName("primaryAction")
         self.connect_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.connect_button.clicked.connect(self.open_connections)

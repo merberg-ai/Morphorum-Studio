@@ -159,7 +159,7 @@ def test_connection_status_updates_pill_footer_and_opens_connections(tmp_path):
         assert window.footer_status.text() == "BACKEND CONNECTED"
         window.navigation.setCurrentRow(0)
         window.connection_status.click()
-        assert window.navigation.currentRow() == [p[0] for p in PAGES].index("Connections")
+        assert window.navigation.currentRow() == [p[0] for p in PAGES].index("Settings")
     finally:
         window.close()
 
@@ -170,10 +170,24 @@ def test_view_menu_switches_workspaces(tmp_path):
         menus = {
             b.text(): b.menu() for b in window.title_bar.findChildren(QToolButton, "menuButton")
         }
-        assert set(menus) == {"File", "View", "Help"}
+        assert set(menus) == {"File", "Edit", "View", "Help"}
         actions = menus["View"].actions()
-        assert [a.text() for a in actions] == [p[0] for p in PAGES]
+        assert [a.text() for a in actions][:len(PAGES)] == [p[0] for p in PAGES]
+        assert actions[-1].text() == "Refresh this page"
         actions[4].trigger()
         assert window.navigation.currentRow() == 4
     finally:
         window.close()
+
+
+def test_style_glyphs_are_written_and_referenced_by_the_stylesheet(tmp_path):
+    _app()
+    from morphorum_studio.ui.icons import STYLE_GLYPHS, write_style_glyphs
+
+    directory = write_style_glyphs(str(tmp_path / "glyphs"), DARK.dim)
+    for name in STYLE_GLYPHS:
+        for suffix in ("", "@2x"):
+            assert (tmp_path / "glyphs" / f"{name}{suffix}.png").stat().st_size > 0
+    css = build_stylesheet(DARK, glyph_dir=directory)
+    assert "$" not in css and f'url("{directory}/chev-down.png")' in css and "QSpinBox::up-button" in css
+    assert "chev-down.png" not in build_stylesheet(DARK)  # without glyphs Qt's defaults are used

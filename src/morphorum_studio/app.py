@@ -29,7 +29,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .ui.fonts import load_bundled_fonts
     from .ui.main_window import StudioMainWindow
     from .ui.shell import asset_path
-    from .ui.theme import DARK_STYLESHEET
+    from .ui.theme import application_stylesheet
 
     app = QApplication.instance()
     owns_app = app is None
@@ -40,7 +40,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     app.setOrganizationName("Morphorum")
     app.setStyle("Fusion")
     load_bundled_fonts()
-    app.setStyleSheet(DARK_STYLESHEET)
+    app.setStyleSheet(application_stylesheet())
     icon_path = asset_path("app-icon.ico")
     if icon_path.is_file():
         app.setWindowIcon(QIcon(str(icon_path)))

@@ -435,6 +435,6 @@ def test_main_window_wiring(tmp_path):
         assert not window.image_lab_page._active
         window.navigation.setCurrentRow(names.index("Image Lab"))
         window.image_lab_page.connect_button.click()
-        assert window.navigation.currentRow() == names.index("Connections")
+        assert window.navigation.currentRow() == names.index("Settings")
     finally:
         window.close()

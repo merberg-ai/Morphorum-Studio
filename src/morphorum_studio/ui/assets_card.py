@@ -121,6 +121,7 @@ class AssetsCard(QFrame):
         self.start_mode.addItem("The prompt (text to image)", "prompt")
         self.start_mode.addItem("The source image (image to image)", "source")
         self.start_mode.setAccessibleName("How the first frame starts")
+        self.start_mode.setToolTip("Text to image starts from the prompt; image to image starts from the source image")
         start_row.addWidget(self.start_mode)
         start_row.addStretch(1)
         box.addLayout(start_row)

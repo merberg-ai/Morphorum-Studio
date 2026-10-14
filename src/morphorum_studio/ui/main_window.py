@@ -40,6 +40,7 @@ from morphorum_studio.ui.timeline_service import TimelineService
 from morphorum_studio.ui.console_page import ConsolePage
 from morphorum_studio.ui.projects_service import ProjectsService
 from morphorum_studio.ui.shell import NavRail, TitleBar
+from morphorum_studio.ui.settings_page import SettingsPage
 from morphorum_studio.ui.startup_settings import StartupSettingsPanel
 
 
@@ -47,15 +48,9 @@ PAGES: tuple[tuple[str, str, str], ...] = (
     (
         "Home",
         "Welcome to Morphorum Studio",
-        "Connect to a Morphorum GPU backend from Connections. Model loading and "
+        "Connect to a Morphorum GPU backend from Settings. Model loading and "
         "media rendering stay on the backend, not this computer. The live dashboard "
         "arrives in S2.1.",
-    ),
-    (
-        "Connections",
-        "Backend Connection Manager",
-        "S1: named connection profiles, authenticated capability discovery, "
-        "OS credential storage, host identity checks, and safe reconnect.",
     ),
     (
         "Projects",
@@ -84,8 +79,8 @@ PAGES: tuple[tuple[str, str, str], ...] = (
     (
         "Render Queue",
         "Live Job Monitor",
-        "S3: follow render progress, reconnect to existing jobs, "
-        "download completed frames and export video with audio.",
+        "Renders are started and followed from a project's Render card on the Projects page. "
+        "A cross-project queue view is planned.",
     ),
     (
         "Console",
@@ -114,7 +109,6 @@ def _label(text: str, object_name: str | None = None) -> QLabel:
 # Rail icon and short label per workspace (full names appear as tooltips).
 NAV_META: dict[str, tuple[str, str]] = {
     "Home": ("home", "Home"),
-    "Connections": ("plug", "Connect"),
     "Projects": ("library", "Projects"),
     "Image Lab": ("sparkle", "Image"),
     "Editor": ("timeline", "Editor"),
@@ -197,7 +191,7 @@ class StudioMainWindow(QMainWindow):
             if page_name == "Home":
                 self.home_page = HomePage(self.session, self.dashboard)
                 self.home_page.open_connections.connect(
-                    lambda: self.navigation.setCurrentRow(names.index("Connections"))
+                    self._show_connections
                 )
                 self.pages.addWidget(self.home_page)
             elif page_name == "Projects":
@@ -207,29 +201,29 @@ class StudioMainWindow(QMainWindow):
                     self.setup_service, self.models_service,
                 )
                 self.projects_page.open_connections.connect(
-                    lambda: self.navigation.setCurrentRow(names.index("Connections"))
+                    self._show_connections
                 )
                 self.pages.addWidget(self.projects_page)
             elif page_name == "Image Lab":
                 self.image_lab_page = ImageLabPage(self.session, self.image_service, self.preferences)
                 self.image_lab_page.open_connections.connect(
-                    lambda: self.navigation.setCurrentRow(names.index("Connections"))
+                    self._show_connections
                 )
                 self.pages.addWidget(self.image_lab_page)
             elif page_name == "Editor":
                 self.editor_page = EditorPage(self.session, self.projects_service, self.timeline_service)
                 self.pages.addWidget(self.editor_page)
             elif page_name == "Console":
-                self.console_page = ConsolePage(self.session, self.console_service)
+                self.console_page = ConsolePage(self.session, self.console_service, self.preferences)
                 self.pages.addWidget(self.console_page)
-            elif page_name == "Connections":
+            elif page_name == "Settings":
                 self.connections_panel = ConnectionsPanel(
                     preferences=self.preferences, session=self.session
                 )
                 self.connections_panel.status_changed.connect(self._on_connection_status)
-                self.pages.addWidget(self.connections_panel)
-            elif page_name == "Settings":
-                self.pages.addWidget(StartupSettingsPanel(self.preferences))
+                self.settings_page = SettingsPage(
+                    self.connections_panel, StartupSettingsPanel(self.preferences))
+                self.pages.addWidget(self.settings_page)
             else:
                 self.pages.addWidget(self._make_page(page_name, title, description))
         body_layout.addWidget(self.pages, 1)
@@ -250,7 +244,7 @@ class StudioMainWindow(QMainWindow):
             lambda row: self.editor_page.set_active(row == names.index("Editor"))
         )
         self.connection_status.clicked.connect(
-            lambda *_: self.navigation.setCurrentRow(names.index("Connections"))
+            lambda *_: self._show_connections()
         )
         selected_id = self.preferences.profile("last_selected")
         if selected_id:
@@ -264,6 +258,7 @@ class StudioMainWindow(QMainWindow):
         start_page = self.preferences.workspace() if self.preferences.enabled(
             "restore_workspace", True
         ) else "Home"
+        start_page = "Settings" if start_page == "Connections" else start_page  # moved into Settings
         self.navigation.setCurrentRow(names.index(start_page) if start_page in names else 0)
 
         footer = QFrame()
@@ -272,7 +267,7 @@ class StudioMainWindow(QMainWindow):
         footer_layout.setContentsMargins(14, 5, 14, 5)
         footer_layout.setSpacing(18)
         footer_layout.addWidget(_label(f"Studio {__version__}", "footerText"))
-        footer_layout.addWidget(_label("Native remote connection manager", "footerText"))
+        footer_layout.addWidget(_label("Remote backend client", "footerText"))
         footer_layout.addStretch()
         self.footer_status = _label("BACKEND OFFLINE", "footerText")
         footer_layout.addWidget(self.footer_status)
@@ -291,7 +286,18 @@ class StudioMainWindow(QMainWindow):
         quit_action.setShortcut(QKeySequence("Ctrl+Q"))
         quit_action.triggered.connect(self.close)
         self.addAction(quit_action)
-        self.title_bar.add_menu("File", [quit_action])
+        new_action = self._page_action("New project", "Ctrl+N", "Projects",
+                                       lambda: self.projects_page.new_button.click())
+        save_action = self._page_action("Save project changes", "Ctrl+S", "Projects",
+                                        lambda: self.projects_page.save_button.click())
+        self.title_bar.add_menu("File", [new_action, save_action, None, quit_action])
+
+        undo_action = self._page_action("Undo keyframe edit", "Ctrl+Z", "Editor",
+                                        lambda: self.editor_page.undo_button.click())
+        redo_action = self._page_action("Redo keyframe edit", "Ctrl+Shift+Z", "Editor",
+                                        lambda: self.editor_page.redo_button.click())
+        redo_action.setShortcuts([QKeySequence("Ctrl+Shift+Z"), QKeySequence("Ctrl+Y")])
+        self.title_bar.add_menu("Edit", [undo_action, redo_action])
 
         view_actions: list[QAction | None] = []
         for index, name in enumerate(names):
@@ -301,11 +307,60 @@ class StudioMainWindow(QMainWindow):
             action.triggered.connect(lambda _checked=False, row=index: self.navigation.setCurrentRow(row))
             self.addAction(action)
             view_actions.append(action)
+        view_actions.append(None)
+        refresh = QAction("Refresh this page", self)
+        refresh.setShortcut(QKeySequence("F5"))
+        refresh.triggered.connect(self._refresh_page)
+        self.addAction(refresh)
+        view_actions.append(refresh)
         self.title_bar.add_menu("View", view_actions)
 
+        keys = QAction("Keyboard shortcuts", self)
+        keys.setShortcut(QKeySequence("F1"))
+        keys.triggered.connect(self._show_shortcuts)
+        self.addAction(keys)
         about = QAction("About Morphorum Studio", self)
         about.triggered.connect(self._show_about)
-        self.title_bar.add_menu("Help", [about])
+        self.title_bar.add_menu("Help", [keys, about])
+
+    def _page_action(self, text: str, shortcut: str, page: str, run) -> QAction:
+        """An action that only acts while ``page`` is showing, so shortcuts never hit another page.
+
+        Text fields keep their own Ctrl+Z / Ctrl+S-style handling: Qt gives a focused text editor
+        first claim on its standard keys, so these never fight typing."""
+        action = QAction(text, self)
+        action.setShortcut(QKeySequence(shortcut))
+        names = [entry[0] for entry in PAGES]
+        action.triggered.connect(
+            lambda _checked=False: run() if self.navigation.currentRow() == names.index(page) else None)
+        self.addAction(action)
+        return action
+
+    def _refresh_page(self) -> None:
+        name = PAGES[self.navigation.currentRow()][0]
+        button = {"Projects": lambda: self.projects_page.refresh_button,
+                  "Editor": lambda: self.editor_page.reload}.get(name)
+        if button is not None:
+            button().click()
+
+    def _show_shortcuts(self) -> None:
+        QMessageBox.information(
+            self, "Keyboard shortcuts",
+            "Ctrl+1 … Ctrl+9\tSwitch workspace\n"
+            "F5\tRefresh the Projects list / reload the Editor timeline\n"
+            "Ctrl+N\tNew project (Projects)\n"
+            "Ctrl+S\tSave project changes (Projects)\n"
+            "Ctrl+Z\tUndo keyframe edit (Editor)\n"
+            "Ctrl+Shift+Z or Ctrl+Y\tRedo keyframe edit (Editor)\n"
+            "← →  (Shift ×10)\tStep the timeline playhead (Editor)\n"
+            "F1\tThis list\n"
+            "Ctrl+Q\tQuit\n\n"
+            "While you are typing in a text box, its own editing keys take priority.")
+
+    def _show_connections(self) -> None:
+        """Connection setup lives on the Settings page (Backend connection tab)."""
+        self.navigation.setCurrentRow([entry[0] for entry in PAGES].index("Settings"))
+        self.settings_page.show_connection()
 
     def _show_about(self) -> None:
         QMessageBox.about(

@@ -43,6 +43,8 @@ class NewProjectDialog(QDialog):
         self._reviewed = False
         self._local: tuple = ()
         box = QVBoxLayout(self)
+        box.setContentsMargins(22, 20, 22, 20)
+        box.setSpacing(12)
         intro = QLabel("Pick the basics. The backend supplies every other default and checks the "
                        "result before anything is created; camera schedules are left untouched.")
         intro.setWordWrap(True)
@@ -80,6 +82,10 @@ class NewProjectDialog(QDialog):
         self.negative = QPlainTextEdit()
         self.negative.setPlaceholderText("Negative prompt (optional)")
         self.negative.setFixedHeight(50)
+        self.model.setToolTip("The checkpoint renders will use; its family decides which settings apply")
+        self.mode.setToolTip("2D warps the previous frame; 3D moves a camera through estimated depth")
+        self.start.setToolTip("Begin frame 0 from the prompt, or from a source image you attach afterwards")
+        self.frames.setToolTip("Total number of frames; length in seconds is frames divided by frame rate")
         form.addRow("Name", self.name)
         form.addRow("Checkpoint", self.model)
         form.addRow("Size", self.size_preset)

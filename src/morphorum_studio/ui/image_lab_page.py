@@ -117,7 +117,7 @@ class ImageLabPage(QFrame):
         outer.addWidget(_label("Image Lab", "pageHeading"))
         self.status_line = _label("", "pageDescription", wrap=True)
         outer.addWidget(self.status_line)
-        self.connect_button = QPushButton("Open Connections")
+        self.connect_button = QPushButton("Open connection settings")
         self.connect_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.connect_button.clicked.connect(self.open_connections)
         outer.addWidget(self.connect_button, 0, Qt.AlignmentFlag.AlignLeft)

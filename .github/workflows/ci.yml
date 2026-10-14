@@ -6,7 +6,7 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   shell:
@@ -49,3 +49,34 @@ jobs:
           PY
       - name: Verify clean wheel installation and bundled splash
         run: python scripts/verify_clean_install.py
+      - name: Render UI screenshots (offscreen)
+        continue-on-error: true
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          python scripts/render_screenshots.py ui-screenshots
+          QT_SCALE_FACTOR=1.75 python scripts/render_screenshots.py ui-screenshots/dpi175 --sizes 1200x760,880x560
+      - name: Upload UI screenshots
+        if: matrix.os == 'ubuntu-latest' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-screenshots
+          path: ui-screenshots
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Publish screenshots to the ui-screenshots branch
+        if: matrix.os == 'ubuntu-latest' && github.event_name == 'push' && startsWith(github.ref_name, 'feature/')
+        continue-on-error: true
+        run: |
+          set -e
+          dir=$(mktemp -d)
+          cp -r ui-screenshots/. "$dir"/ || exit 0
+          rm -f "$dir"/prefs.ini "$dir"/dpi175/prefs.ini
+          echo "${GITHUB_SHA}" > "$dir/SOURCE_SHA"
+          cd "$dir"
+          git init -q
+          git checkout -q -b ui-screenshots
+          git config user.name "studio-ci"
+          git config user.email "studio-ci@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Screenshots for ${GITHUB_SHA}"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ui-screenshots

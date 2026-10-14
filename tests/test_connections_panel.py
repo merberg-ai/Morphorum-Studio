@@ -544,3 +544,22 @@ def test_rejected_identity_change_leaves_no_session(tmp_path, monkeypatch):
     finally:
         panel.close()
         assert app is not None
+
+
+def test_short_window_scrolls_instead_of_squeezing_the_cards(tmp_path):
+    from PySide6.QtWidgets import QScrollArea
+    QApplication.instance() or QApplication([])
+    panel = ConnectionsPanel(profile_store=ProfileStore(tmp_path / "p.json"), credential_store=FakeVault())
+    try:
+        panel.resize(900, 300)
+        panel.show()
+        QApplication.processEvents()
+        scroll = panel.findChild(QScrollArea, "connectionsScroll")
+        content = scroll.widget()
+        assert content.height() >= content.layout().totalHeightForWidth(900) - 2  # text keeps its height
+        assert scroll.verticalScrollBar().maximum() > 0  # the overflow scrolls
+        panel.help_toggle.setChecked(True)  # expanding the help grows the content, still no overlap
+        QApplication.processEvents()
+        assert content.height() >= content.layout().totalHeightForWidth(900) - 2
+    finally:
+        panel.close()

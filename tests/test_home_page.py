@@ -195,7 +195,7 @@ def test_no_control_claims_to_load_or_run_a_model():
     from PySide6.QtWidgets import QPushButton
 
     labels = {b.text().lower() for b in home.findChildren(QPushButton)}
-    assert labels == {"open connections", "refresh"}
+    assert labels == {"open connection settings", "refresh"}
     assert "image generation (s3)" in home.model_footer.text().lower()
 
 
@@ -211,11 +211,11 @@ def test_main_window_wires_home_session_and_polling(tmp_path):
         assert window.connections_panel.session is window.session
         assert window.pages.widget(names.index("Home")) is window.home_page
         assert window.dashboard._active  # Home is the start page
-        window.navigation.setCurrentRow(names.index("Connections"))
+        window.navigation.setCurrentRow(names.index("Settings"))
         assert not window.dashboard._active
         window.navigation.setCurrentRow(names.index("Home"))
         assert window.dashboard._active
         window.home_page.connect_button.click()
-        assert window.navigation.currentRow() == names.index("Connections")
+        assert window.navigation.currentRow() == names.index("Settings")
     finally:
         window.close()

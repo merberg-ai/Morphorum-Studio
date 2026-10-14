@@ -90,6 +90,18 @@ class EditorPage(QWidget):
         self.status = _label("", "pageDescription", wrap=True)
         box.addWidget(self.status)
 
+        # Everything below the heading scrolls when the window is too small, instead of overlapping.
+        page_scroll = QScrollArea()
+        page_scroll.setWidgetResizable(True)
+        page_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        body = QWidget()
+        body.setMinimumSize(720, 500)
+        page_scroll.setWidget(body)
+        box.addWidget(page_scroll, 1)
+        box = QVBoxLayout(body)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(10)
+
         top = QHBoxLayout()
         self.project = QComboBox()
         self.project.setMinimumWidth(240)
@@ -115,8 +127,8 @@ class EditorPage(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setWidget(self.view)
-        scroll.setMinimumHeight(200)
-        box.addWidget(scroll, 3)
+        scroll.setMinimumHeight(170)
+        box.addWidget(scroll, 1)
 
         lower = QHBoxLayout()
         lower.setSpacing(14)
@@ -166,17 +178,34 @@ class EditorPage(QWidget):
         self.interp = QComboBox()
         self.undo_button = QPushButton("Undo")
         self.redo_button = QPushButton("Redo")
+        self.reload.setToolTip("Read the timeline from the backend again (F5)")
+        self.frame_spin.setToolTip("Playhead frame. Left/Right arrows step by one, Shift by ten.")
+        self.set_button.setToolTip("Add a keyframe at the playhead, or replace the one that is there")
+        self.update_button.setToolTip("Change the value of the selected keyframe")
+        self.delete_button.setToolTip("Remove the selected keyframe")
+        self.move_button.setToolTip("Move the selected keyframe to the playhead frame")
+        self.interp.setToolTip("How values blend from the selected keyframe to the next one")
+        self.undo_button.setToolTip("Undo the last edit (Ctrl+Z)")
+        self.redo_button.setToolTip("Redo the edit you undid (Ctrl+Shift+Z)")
         for widget in (self.set_button, self.update_button, self.delete_button, self.move_button,
-                       self.interp, self.undo_button, self.redo_button):
-            if isinstance(widget, QPushButton):
-                widget.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+                       self.undo_button, self.redo_button):
+            widget.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        for widget in (self.set_button, self.update_button, self.move_button, self.delete_button):
             edit_row.addWidget(widget)
         edit_row.addStretch(1)
         right.addLayout(edit_row)
+        history_row = QHBoxLayout()
+        history_row.setSpacing(6)
+        history_row.addWidget(QLabel("Interpolation"))
+        history_row.addWidget(self.interp)
+        history_row.addStretch(1)
+        history_row.addWidget(self.undo_button)
+        history_row.addWidget(self.redo_button)
+        right.addLayout(history_row)
         self.edit_status = _label("", "hint", wrap=True)
         right.addWidget(self.edit_status)
         lower.addLayout(right, 1)
-        box.addLayout(lower, 2)
+        box.addLayout(lower, 3)
         box.addWidget(_label("Values and curves are evaluated by the backend. Each edit is saved to the "
                              "backend immediately and can be undone here.", "hint", wrap=True))
 

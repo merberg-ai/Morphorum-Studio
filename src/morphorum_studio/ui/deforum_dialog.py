@@ -38,6 +38,8 @@ class DeforumImportDialog(QDialog):
         self._filename = ""
         self._preview: DeforumPreview | None = None
         box = QVBoxLayout(self)
+        box.setContentsMargins(22, 20, 22, 20)
+        box.setSpacing(12)
         intro = QLabel("Creates a new project from a Deforum settings file. The backend translates "
                        "it; unsupported settings are listed, never silently dropped.")
         intro.setWordWrap(True)

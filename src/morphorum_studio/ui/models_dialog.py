@@ -70,6 +70,8 @@ class ModelsDialog(QDialog):
         self._details: dict[str, str] = {}
         self._civitai: dict[str, CivitaiMatch] = {}
         box = QVBoxLayout(self)
+        box.setContentsMargins(22, 20, 22, 20)
+        box.setSpacing(12)
         self.note = QLabel("Loading what the backend has indexed…")
         self.note.setWordWrap(True)
         box.addWidget(self.note)
@@ -102,6 +104,7 @@ class ModelsDialog(QDialog):
         self.open_button = QPushButton("Open Civitai page")
         self.lookup_note = QLabel("Optional. Sends only the file's SHA-256 hash to civitai.com.")
         self.lookup_note.setWordWrap(True)
+        self.lookup_button.setToolTip("Optional online lookup; only the file's SHA-256 is sent to civitai.com")
         look.addWidget(self.lookup_button)
         look.addWidget(self.open_button)
         look.addWidget(self.lookup_note, 1)

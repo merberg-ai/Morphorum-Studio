@@ -49,3 +49,15 @@ jobs:
           PY
       - name: Verify clean wheel installation and bundled splash
         run: python scripts/verify_clean_install.py
+      - name: Render UI screenshots (offscreen)
+        continue-on-error: true
+        if: matrix.os == 'ubuntu-latest'
+        run: python scripts/render_screenshots.py ui-screenshots
+      - name: Upload UI screenshots
+        if: matrix.os == 'ubuntu-latest' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-screenshots
+          path: ui-screenshots
+          if-no-files-found: ignore
+          retention-days: 14

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -21,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from morphorum_studio.backend.session import BackendSession
+from morphorum_studio.backend.validation import Validation
 from morphorum_studio.backend.timeline import (
     EditError,
     Resolved,
@@ -73,6 +76,7 @@ class EditorPage(QWidget):
         service.busy_changed.connect(lambda _b: self._update())
         service.cleared.connect(self._cleared)
         service.edited.connect(self._edited)
+        service.validated.connect(self._validated)
         service.history_changed.connect(self._update_edit_controls)
         session.changed.connect(self._update)
         self._update()
@@ -129,6 +133,11 @@ class EditorPage(QWidget):
         self.prompt_view.setReadOnly(True)
         self.prompt_view.setMaximumHeight(90)
         left.addWidget(self.prompt_view)
+        self.check_label = _label("", "fieldLabel", wrap=True)
+        left.addWidget(self.check_label)
+        self.issues = QListWidget()
+        self.issues.setMaximumHeight(96)
+        left.addWidget(self.issues)
         lower.addLayout(left, 1)
 
         right = QVBoxLayout()
@@ -177,6 +186,8 @@ class EditorPage(QWidget):
         self.view.frame_changed.connect(self._view_frame)
         self.view.track_selected.connect(self._track_selected)
         self.keys.currentCellChanged.connect(lambda *_: self._key_selected())
+        self.issues.itemActivated.connect(self._issue_chosen)
+        self.issues.itemClicked.connect(self._issue_chosen)
         self.set_button.clicked.connect(self._set_at_playhead)
         self.update_button.clicked.connect(self._update_selected)
         self.delete_button.clicked.connect(self._delete_selected)
@@ -248,6 +259,8 @@ class EditorPage(QWidget):
         self.values.setRowCount(0)
         self.keys.setRowCount(0)
         self.prompt_view.clear()
+        self.issues.clear()
+        self.check_label.setText("")
         self.curve.show_message("Select a numeric track")
         self.track_title.setText("Select a track")
         self.frame_spin.blockSignals(True)
@@ -273,6 +286,9 @@ class EditorPage(QWidget):
         self.track_title.setText("Select a track")
         self._show_frame_label(0)
         self._service.request_frame(0)
+        self.check_label.setText("Checking schedules…")
+        self.issues.clear()
+        self._service.validate()
         self._update()
 
     def _show_frame_label(self, frame: int) -> None:
@@ -344,6 +360,9 @@ class EditorPage(QWidget):
         self.curve.set_frame(self.view.frame)
 
     def _failed(self, operation: str, code: str, message: str) -> None:
+        if operation == "validate":
+            self.check_label.setText(f"Schedules could not be checked: {message}")
+            return
         if operation == "edit":
             self.edit_status.setText(f"Edit failed: {message}")
             self._update_edit_controls()
@@ -453,4 +472,33 @@ class EditorPage(QWidget):
             self._track_selected(self._track_id)
         self.edit_status.setText("Saved.")
         self._service.request_frame(self.view.frame)
+        self._service.validate()
         self._update()
+
+    # -- validation (S4.3) --------------------------------------------------------------
+
+    def _validated(self, result: Validation | None) -> None:
+        self.issues.clear()
+        if result is None:
+            self.check_label.setText("Schedules could not be checked.")
+            return
+        errors, warnings = len(result.errors), len(result.warnings)
+        if result.valid and not warnings:
+            self.check_label.setText("Schedules are valid.")
+        elif result.valid:
+            self.check_label.setText(f"Schedules are valid with {warnings} warning(s).")
+        else:
+            self.check_label.setText(f"{errors} schedule error(s), {warnings} warning(s): "
+                                     "renders are blocked until errors are fixed.")
+        for issue in result.issues:
+            item = QListWidgetItem(f"{'⚠' if issue.severity == 'warning' else '✖'} "
+                                   f"{issue.field or 'project'}: {issue.message}")
+            item.setData(Qt.ItemDataRole.UserRole, issue.track_id)
+            item.setToolTip(issue.message)
+            self.issues.addItem(item)
+
+    def _issue_chosen(self, item: QListWidgetItem) -> None:
+        track_id = item.data(Qt.ItemDataRole.UserRole)
+        if track_id and self._timeline and self._timeline.track(track_id):
+            self.view.select(track_id)
+            self._track_selected(track_id)

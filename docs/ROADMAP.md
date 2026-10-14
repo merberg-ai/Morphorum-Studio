@@ -118,7 +118,7 @@ Incremental implementation order (stop for user review before GPU operations):
 
 ## S4. Native animation editor and authoring workflow
 
-*Checkpoints: S4.1 timeline viewer (IMPLEMENTED on feature/studio-s4-1-timeline, see [S4_1_TIMELINE.md](S4_1_TIMELINE.md)); S4.2 keyframe editing (IMPLEMENTED on feature/studio-s4-2-keyframes, see [S4_2_KEYFRAMES.md](S4_2_KEYFRAMES.md)); S4.3 validation/import/presets; S4.4 img2img, LoRA manager, wizard.*
+*Checkpoints: S4.1 timeline viewer (IMPLEMENTED on feature/studio-s4-1-timeline, see [S4_1_TIMELINE.md](S4_1_TIMELINE.md)); S4.2 keyframe editing (IMPLEMENTED on feature/studio-s4-2-keyframes, see [S4_2_KEYFRAMES.md](S4_2_KEYFRAMES.md)); S4.3 validation/import (IMPLEMENTED on feature/studio-s4-3-import-validation, see [S4_3_IMPORT_VALIDATION.md](S4_3_IMPORT_VALIDATION.md); motion-import/presets move to S5); S4.4 img2img, LoRA manager, wizard.*
 
 - Native timeline of prompt, negative-prompt, generation, 2D motion, six-axis 3D camera, cadence and seed schedules.
 - Flexible keyframes, easing/interpolation and preview scrubbing. Backend normalization owns schedule interpretation.

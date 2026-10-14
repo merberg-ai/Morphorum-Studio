@@ -337,6 +337,7 @@ class HomePage(QFrame):
         self.notice = _label("", "notice", wrap=True)
         self.notice.setVisible(False)
         page.addWidget(self.notice)
+        self._page_layout = page
 
         self.body = QStackedWidget()
         page.addWidget(self.body)
@@ -560,6 +561,10 @@ class HomePage(QFrame):
         self.recent_note.setText("Loading projects…")
         self.recent_note.setVisible(True)
         self.queue_note.setText("")
+
+    def add_strip(self, widget: QWidget) -> None:
+        """Show a status strip (the local backend) under the page's status line."""
+        self._page_layout.insertWidget(4, widget)
 
     # -- session ------------------------------------------------------------------------
 

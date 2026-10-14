@@ -91,6 +91,8 @@ class ManagedPanel(QWidget):
                  open_folder: Callable[[str], None] = open_in_file_manager,
                  installer: mi.InstallDriver | None = None,
                  confirm_close_install: Callable[[], bool] | None = None,
+                 confirm_lan: Callable[[], bool] | None = None,
+                 lan_address: Callable[[int], str] = managed.lan_address,
                  parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.connections, self.backend = connections, backend
@@ -103,6 +105,8 @@ class ManagedPanel(QWidget):
         self._open_folder = open_folder
         self.installer = installer or mi.InstallDriver()
         self._confirm_close_install = confirm_close_install or self._confirm_close_install_dialog
+        self._confirm_lan = confirm_lan or self._confirm_lan_dialog
+        self._lan_address = lan_address
         self._issuer: mb.CredentialIssuer | None = None
         self._connect_when_ready = False
         self._restart = False
@@ -116,6 +120,7 @@ class ManagedPanel(QWidget):
         backend.state_changed.connect(self._state_changed)
         backend.log_line.connect(self._append_log)
         backend.ready.connect(self._backend_ready)
+        backend.restart_scheduled.connect(lambda _attempt, _delay: setattr(self, "_connect_when_ready", True))
         connections.status_changed.connect(self._connection_changed)
         self.installer.log_line.connect(self._append_log)
         self.installer.stage.connect(self._install_stage)
@@ -125,11 +130,15 @@ class ManagedPanel(QWidget):
         self.folder_edit.setText(self.settings.folder)
         for widget, apply in ((self.port, lambda: self.port.setValue(self.settings.port)),
                               (self.autostart, lambda: self.autostart.setChecked(self.settings.autostart)),
-                              (self.stop_on_exit, lambda: self.stop_on_exit.setChecked(self.settings.stop_on_exit))):
+                              (self.stop_on_exit, lambda: self.stop_on_exit.setChecked(self.settings.stop_on_exit)),
+                              (self.auto_restart, lambda: self.auto_restart.setChecked(self.settings.auto_restart)),
+                              (self.lan, lambda: self.lan.setChecked(self.settings.lan))):
             widget.blockSignals(True)  # showing saved values is not a change to save
             apply()
             widget.blockSignals(False)
-        backend.configure(self.settings.folder, self.settings.port)
+        backend.auto_restart = self.settings.auto_restart
+        backend.configure(self.settings.folder, self.settings.port, self.settings.lan)
+        self._lan_hint()
         self._show_folder_check()
         self._update()
 
@@ -212,8 +221,16 @@ class ManagedPanel(QWidget):
         self.stop_on_exit = QCheckBox("Stop the backend when Studio closes")
         self.stop_on_exit.toggled.connect(self._exit_setting_changed)
         box.addWidget(self.stop_on_exit)
-        box.addWidget(_label(
-            "The backend listens on this PC only. Studio stops only a backend that Studio started.", "hint"))
+        self.auto_restart = QCheckBox("Start the backend again if it stops unexpectedly")
+        self.auto_restart.setToolTip("Up to three tries, then Studio stops and tells you.")
+        self.auto_restart.toggled.connect(self._auto_restart_changed)
+        box.addWidget(self.auto_restart)
+        self.lan = QCheckBox("Let other computers on my network connect")
+        self.lan.toggled.connect(self._lan_changed)
+        box.addWidget(self.lan)
+        self.lan_note = _label("", "hint")
+        box.addWidget(self.lan_note)
+        box.addWidget(_label("Studio stops only a backend that Studio started.", "hint"))
         layout.addWidget(folder_card)
 
         self.install_card, ibox = self._card("Install Morphorum")
@@ -275,12 +292,15 @@ class ManagedPanel(QWidget):
         self.stop_button = self._fixed(QPushButton("Stop"), 90)
         self.stop_button.setObjectName("dangerAction")
         self.stop_button.clicked.connect(self.stop)
+        self.port_button = self._fixed(QPushButton("Use a free port"), 130)
+        self.port_button.setToolTip("Switch Studio's backend to the next port nothing is using")
+        self.port_button.clicked.connect(self.use_free_port)
         self.start_button = self._fixed(QPushButton("Start and connect"), 150)
         self.start_button.setObjectName("primaryAction")
         self.start_button.clicked.connect(self.start)
         buttons.addWidget(self.reset_button)
         buttons.addStretch(1)
-        for button in (self.restart_button, self.stop_button, self.start_button):
+        for button in (self.port_button, self.restart_button, self.stop_button, self.start_button):
             buttons.addWidget(button)
         rbox.addLayout(buttons)
         self.log_toggle = QToolButton()
@@ -351,7 +371,57 @@ class ManagedPanel(QWidget):
         self.settings.port = int(value)
         self._persist()
         self.backend.configure(self.settings.folder, self.settings.port)
+        self._lan_hint()
         self._update()
+
+    def use_free_port(self) -> None:
+        """The port is taken by another program: move Studio's backend to the next free one."""
+        if self.backend.owned or self.backend.state != mb.PORT_BUSY:
+            return
+        free = managed.free_port(self.settings.port + 1)
+        if free is None:
+            self._say("No free port was found near this one. Choose a port by hand.")
+            return
+        old = self.settings.port
+        self.port.setValue(free)  # saves, re-checks and re-points the connection on the next start
+        self._say(f"Port {old} is in use, so Studio will use port {free}.")
+
+    def _auto_restart_changed(self, checked: bool) -> None:
+        self.settings.auto_restart = bool(checked)
+        self.backend.auto_restart = bool(checked)
+        self._persist()
+
+    def _confirm_lan_dialog(self) -> bool:
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Allow other computers?")
+        box.setText(managed.LAN_WARNING)
+        allow = box.addButton("Allow my network", QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton("Keep it on this PC", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        return box.clickedButton() is allow
+
+    def _lan_changed(self, checked: bool) -> None:
+        if checked and not self._confirm_lan():
+            self.lan.blockSignals(True)
+            self.lan.setChecked(False)
+            self.lan.blockSignals(False)
+            return
+        self.settings.lan = bool(checked)
+        self._persist()
+        self.backend.configure(self.settings.folder, self.settings.port, self.settings.lan)
+        self._lan_hint()
+        self._update()
+
+    def _lan_hint(self) -> None:
+        if not self.settings.lan:
+            self.lan_note.setText("The backend listens on this PC only.")
+            return
+        address = self._lan_address(self.settings.port)
+        where = f"Other computers can use {address}" if address else "Other computers can connect to this PC's address"
+        self.lan_note.setText(
+            f"{where} with a credential of their own (create one with the backend's `clients issue` command). "
+            "Not encrypted: trusted networks only. Applies the next time Studio starts the backend.")
 
     def _autostart_changed(self, checked: bool) -> None:
         self.settings.autostart = bool(checked)
@@ -365,6 +435,7 @@ class ManagedPanel(QWidget):
 
     def start(self) -> None:
         self._notice = ""
+        self.backend.reset_restarts()
         if self.backend.owned or (self._issuer is not None and self._issuer.busy):
             return
         if self.backend.state == mb.ADOPTED:
@@ -638,6 +709,10 @@ class ManagedPanel(QWidget):
 
         self.open_button.setEnabled(bool(self.settings.folder) and Path(self.settings.folder).is_dir())
         self.reset_button.setEnabled(ready and not busy_credential)
+        self.port_button.setVisible(state == mb.PORT_BUSY)
+        self.port_button.setEnabled(state == mb.PORT_BUSY and not installing)
+        self.lan.setEnabled(not owned and not installing)
+        self.auto_restart.setEnabled(not installing)
 
     # ---- closing Studio -----------------------------------------------------------------
 

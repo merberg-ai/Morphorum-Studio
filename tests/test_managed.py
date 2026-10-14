@@ -94,15 +94,28 @@ def installed(tmp_path, name="morph"):
     return folder
 
 
+class FakeJob:
+    """Stands in for the Windows job object."""
+
+    def __init__(self, available=True, works=True):
+        self.available, self.works, self.assigned = available, works, []
+
+    def assign(self, pid):
+        self.assigned.append(pid)
+        return self.works
+
+
 class Rig:
     """A backend with a fake process, a controllable port probe and a temp run record."""
 
-    def __init__(self, tmp_path):
+    def __init__(self, tmp_path, **kw):
         self.open_ports = set()
         self.processes = []
+        self.job = kw.pop("job", None) or FakeJob()
         self.backend = mb.ManagedBackend(
             record_path=tmp_path / "run.json", process_factory=self._new,
-            probe=lambda port: port in self.open_ports, start_timeout_ms=1500, poll_ms=500)
+            probe=lambda port: port in self.open_ports, start_timeout_ms=1500, poll_ms=500,
+            job=self.job, threaded_lookup=False, owner_lookup=lambda port: "", **kw)
 
     def _new(self):
         process = FakeProcess()
@@ -379,7 +392,7 @@ class FakeIssuer(QObject):
 
 
 class PanelRig:
-    def __init__(self, tmp_path, jobs=0, ask=None, installer=None, confirm_close=None):
+    def __init__(self, tmp_path, jobs=0, ask=None, installer=None, confirm_close=None, confirm_lan=None, **rig_kw):
         FakeIssuer.instances = []
         self.tmp = tmp_path
         self.holder = QWidget()
@@ -388,7 +401,7 @@ class PanelRig:
         self.connections = ConnectionsPanel(
             profile_store=ProfileStore(tmp_path / "profiles.json"), credential_store=self.vault,
             preferences=self.prefs)
-        self.rig = Rig(tmp_path)
+        self.rig = Rig(tmp_path, **rig_kw)
         self.jobs = jobs
         self.connected_calls = 0
         self.connections.connect_managed = self._connect
@@ -398,7 +411,8 @@ class PanelRig:
             vault=self.vault, issuer_factory=FakeIssuer, active_jobs=lambda: self.jobs,
             ask_exit=ask or (lambda n: "stop"), choose_folder=lambda parent, start: str(self.folder),
             open_folder=lambda path: setattr(self, "opened", path), installer=installer,
-            confirm_close_install=confirm_close, parent=self.holder)
+            confirm_close_install=confirm_close, confirm_lan=confirm_lan or (lambda: True),
+            lan_address=lambda port: f"http://192.168.1.20:{port}", parent=self.holder)
 
     def _connect(self):
         self.connected_calls += 1

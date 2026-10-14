@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from urllib.parse import urlsplit
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QFileDialog,
@@ -54,6 +54,8 @@ def _small(button: QPushButton, width: int = 0) -> QPushButton:
 
 
 class BackendSettingsPage(QWidget):
+    models_changed = Signal()  # the backend rescanned its model folders
+
     def __init__(self, session: BackendSession, service: BackendSettingsService,
                  choose_folder: Callable[[QWidget, str], str] | None = None,
                  parent: QWidget | None = None) -> None:
@@ -67,6 +69,7 @@ class BackendSettingsPage(QWidget):
         self._rows: list[dict] = []
         self._requested = False
         self._active = False
+        self._rescan_after_save = False
         self._build()
         service.loaded.connect(self._loaded)
         service.saved.connect(self._saved)
@@ -306,6 +309,7 @@ class BackendSettingsPage(QWidget):
             self.status_line.setText("Nothing has changed.")
             return
         self.status_line.setText("Saving…")
+        self._rescan_after_save = "models" in body or "managed_models" in body
         self._service.save(body)
 
     def rescan(self) -> None:
@@ -334,9 +338,13 @@ class BackendSettingsPage(QWidget):
         self._remember_checks(data)
         self._build_form()
         bad = sum(1 for found in data.checks.values() for c in found if not c.ok)
-        self.status_line.setText(
-            "Saved." + (f" {bad} folder(s) could not be used; see the messages below." if bad else "")
-            + " Rescan models so the backend picks up folder changes.")
+        text = "Saved." + (f" {bad} folder(s) could not be used; see the messages below." if bad else "")
+        if self._rescan_after_save:
+            self._rescan_after_save = False
+            self.status_line.setText(text + " Rescanning models…")
+            self._service.rescan()  # the backend only lists models after a scan
+        else:
+            self.status_line.setText(text)
         self._update()
 
     def _checked(self, path: str, found: PathCheck) -> None:
@@ -344,11 +352,10 @@ class BackendSettingsPage(QWidget):
         for entry in self._rows:
             self._show_messages(entry)
 
-    def _scanned(self, total, warnings) -> None:
-        text = f"Rescan finished: {total} model(s) found." if total is not None else "Rescan finished."
-        if warnings:
-            text += " " + " ".join(warnings[:3])
-        self.status_line.setText(text)
+    def _scanned(self, result) -> None:
+        labels = {f.id: f.label for f in self.draft.families} if self.draft is not None else {}
+        self.status_line.setText(result.describe(labels))
+        self.models_changed.emit()
 
     def _failed(self, operation: str, code: str, message: str) -> None:
         self.status_line.setText(f"Could not {'check the folder' if operation == 'check' else operation}: {message}")

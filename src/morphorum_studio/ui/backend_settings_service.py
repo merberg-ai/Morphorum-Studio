@@ -15,7 +15,7 @@ class BackendSettingsService(QObject):
     loaded = Signal(object)  # BackendSettings
     saved = Signal(object)  # BackendSettings
     checked = Signal(str, object)  # path as asked, PathCheck
-    scanned = Signal(object, object)  # models found (int | None), warnings (tuple)
+    scanned = Signal(object)  # ScanResult
     failed = Signal(str, str, str)  # operation, code, message
     busy_changed = Signal(bool)
     cleared = Signal()
@@ -76,4 +76,4 @@ class BackendSettingsService(QObject):
         self._call("check", lambda api: (path, api.check_path(path)), lambda r: self.checked.emit(*r))
 
     def rescan(self) -> None:
-        self._call("rescan", lambda api: api.rescan(), lambda r: self.scanned.emit(*r), timeout=120.0)
+        self._call("rescan", lambda api: api.rescan(), self.scanned.emit, timeout=60.0)

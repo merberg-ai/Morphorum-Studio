@@ -391,6 +391,11 @@ class ImageLabPage(QFrame):
         if active and self._service.available:
             self._refresh_all()
 
+    def reload_models(self) -> None:
+        """The backend rescanned its model folders: read the lists again."""
+        if self._service.available:
+            self._service.load_setup()
+
     def _refresh_all(self) -> None:
         if not self._checkpoints:
             self._service.load_setup()

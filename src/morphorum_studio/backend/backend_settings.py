@@ -126,6 +126,40 @@ def parse_settings(payload: Any) -> BackendSettings:
     return BackendSettings(tuple(families), paths, locations, flags, checks)
 
 
+@dataclass(frozen=True)
+class ScanResult:
+    total: int | None
+    warnings: tuple[str, ...]
+    counts: dict[str, dict[str, int]]  # family -> kind -> files found
+
+    def describe(self, labels: dict[str, str] | None = None) -> str:
+        labels = labels or {}
+        if self.total is None:
+            text = "Rescan finished."
+        elif self.total == 0:
+            text = ("The rescan found no models. Check the folders above hold .safetensors, .ckpt, .pt or .pth "
+                    "files (checkpoints also accept .bin and .gguf).")
+        else:
+            parts = [f"{labels.get(f, f)} {k}: {n}" for f, kinds in self.counts.items() for k, n in kinds.items()]
+            text = f"Rescan finished: {self.total} file(s) found" + (f" ({', '.join(parts)})." if parts else ".")
+        if self.warnings:
+            text += " " + " ".join(self.warnings[:3])
+        return text
+
+
+def parse_scan(reply: Any) -> ScanResult:
+    reply = reply if isinstance(reply, Mapping) else {}
+    total = reply.get("total")
+    warnings = reply.get("warnings")
+    notes = tuple(t for t in (_text(w, 300) for w in (warnings if isinstance(warnings, list) else [])[:20]) if t)
+    counts: dict[str, dict[str, int]] = {}
+    raw = reply.get("counts")
+    for family, kinds in (raw.items() if isinstance(raw, Mapping) else []):
+        if isinstance(kinds, Mapping) and isinstance(family, str):
+            counts[family[:40]] = {str(k)[:20]: n for k, n in kinds.items() if type(n) is int and n >= 0}
+    return ScanResult(total if type(total) is int and total >= 0 else None, notes, counts)
+
+
 def build_update(before: BackendSettings, after: BackendSettings) -> dict[str, Any]:
     """The smallest PUT body that turns ``before`` into ``after`` (empty when nothing changed)."""
     body: dict[str, Any] = {}
@@ -165,11 +199,7 @@ class SettingsApi:
             raise BackendError("INVALID_RESPONSE", "The backend did not describe that folder")
         return found
 
-    def rescan(self) -> tuple[int | None, tuple[str, ...]]:
-        """Ask the backend to rescan its model folders; returns (models found, warnings)."""
+    def rescan(self) -> ScanResult:
+        """Ask the backend to rescan its model folders and report what it found."""
         reply, _etag = self.client.send_json("POST", "/api/models/scan", {})
-        reply = reply if isinstance(reply, Mapping) else {}
-        total = reply.get("total")
-        warnings = reply.get("warnings")
-        notes = tuple(t for t in (_text(w, 300) for w in (warnings if isinstance(warnings, list) else [])[:20]) if t)
-        return (total if type(total) is int else None), notes
+        return parse_scan(reply)

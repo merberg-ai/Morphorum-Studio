@@ -53,6 +53,7 @@ def payload():
 class FakeClient:
     def __init__(self):
         self.puts, self.checks, self.scans, self.fail = [], [], 0, None
+        self.scan_total = 12
         self.state = payload()
 
     def get_json(self, path, params=None):
@@ -74,7 +75,8 @@ class FakeClient:
             return {"path": body["path"], "exists": True, "is_directory": True, "readable": True}, None
         if path == "/api/models/scan":
             self.scans += 1
-            return {"status": "complete", "total": 12, "warnings": ["No folder for flux."]}, None
+            return {"status": "complete", "total": self.scan_total, "warnings": ["No folder for flux."],
+                    "counts": {"sdxl": {"checkpoints": 8, "loras": 4}}}, None
         raise AssertionError(path)
 
 
@@ -112,7 +114,12 @@ def _destroy_widgets():
 
 def rig(url="http://10.0.0.5:7866", connect=True, chosen=""):
     client = FakeClient()
-    session = BackendSession(client_factory=lambda base, token, timeout=6.0: client)
+    def factory(base, token, timeout=6.0):
+        if not 0 < timeout <= 60:  # the real BackendClient refuses anything else
+            raise ValueError("timeout must be in (0, 60] seconds")
+        return client
+
+    session = BackendSession(client_factory=factory)
     service = BackendSettingsService(session, runner=sync_runner)
     page = BackendSettingsPage(session, service, choose_folder=lambda parent, start: chosen)
     page.set_active(True)
@@ -207,8 +214,33 @@ def test_edit_save_sends_only_the_change_then_rescan():
     page.save_button.click()
     assert client.puts == [{"performance": {"unload_after_generation": True}}]
     assert not page.dirty and "Saved." in page.status_line.text() and page.rescan_button.isEnabled()
+    assert client.scans == 0  # a memory option does not change what is on disk
+    changed = []
+    page.models_changed.connect(lambda: changed.append(1))
     page.rescan_button.click()
-    assert client.scans == 1 and "12 model(s)" in page.status_line.text() and "No folder for flux." in page.status_line.text()
+    text = page.status_line.text()
+    assert client.scans == 1 and changed == [1]
+    assert "12 file(s)" in text and "SDXL checkpoints: 8" in text and "SDXL loras: 4" in text
+    assert "No folder for flux." in text
+
+
+def test_saving_folders_rescans_by_itself_and_tells_the_app():
+    client, session, service, page = rig()
+    changed = []
+    page.models_changed.connect(lambda: changed.append(1))
+    edit = page._rows[0]["edit"]
+    edit.setPlainText(edit.toPlainText() + "\nE:\\more")
+    page.save_button.click()
+    assert client.puts and client.scans == 1 and changed == [1]
+    assert "Rescan finished" in page.status_line.text()
+
+
+def test_an_empty_scan_explains_what_files_are_expected():
+    client, session, service, page = rig()
+    client.scan_total = 0
+    page._rows[0]["edit"].setPlainText(r"D:\empty")
+    page.save_button.click()
+    assert ".safetensors" in page.status_line.text() and "no models" in page.status_line.text()
 
 
 def test_edit_folders_and_revert():

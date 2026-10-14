@@ -164,7 +164,7 @@ class BackendSettingsPage(QWidget):
         draft = self.draft
         if draft is None:
             return
-        managed = []
+        managed = [f for f in draft.families if f.managed]
         if managed:
             _card, box = self._card(
                 "Managed model storage",

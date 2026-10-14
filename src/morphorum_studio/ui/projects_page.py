@@ -43,7 +43,6 @@ from morphorum_studio.backend.session import BackendSession
 from morphorum_studio.ui.assets_card import AssetsCard
 from morphorum_studio.ui.library_views import ModelGrid, ProjectGrid
 from morphorum_studio.ui.preferences import StudioPreferences
-from morphorum_studio.ui.render_card import RenderCard
 from morphorum_studio.ui.projects_service import ProjectsService
 
 NA = "—"
@@ -91,15 +90,14 @@ def _label(text: str, name: str, wrap: bool = False) -> QLabel:
 
 class ProjectsPage(QFrame):
     open_connections = Signal()
+    open_timeline = Signal(str)  # project id: edit and render it in the Timeline
 
     def __init__(self, session: BackendSession, service: ProjectsService,
-                 preferences: StudioPreferences, render_service=None, video_service=None,
-                 import_service=None, setup_service=None, models_service=None,
-                 library_service=None) -> None:
+                 preferences: StudioPreferences, import_service=None, setup_service=None,
+                 models_service=None, library_service=None, can_open_timeline: bool = False) -> None:
         super().__init__()
         self._library_service = library_service
-        self._render_service = render_service
-        self._video_service = video_service
+        self._can_open_timeline = can_open_timeline
         self._import_service = import_service
         self._setup_service = setup_service
         self._models_service = models_service
@@ -342,10 +340,21 @@ class ProjectsPage(QFrame):
         self.assets_card.project_changed.connect(self._reload_after_asset_change)
         dbox.addWidget(self.assets_card)
 
-        self.render_card = None
-        if self._render_service is not None:
-            self.render_card = RenderCard(self._render_service, self._video_service)
-            dbox.addWidget(self.render_card)
+        self.timeline_card = QFrame()
+        self.timeline_card.setObjectName("card")
+        tbox = QVBoxLayout(self.timeline_card)
+        tbox.setContentsMargins(20, 18, 20, 20)
+        tbox.setSpacing(8)
+        tbox.addWidget(_label("Timeline and rendering", "cardTitle"))
+        tbox.addWidget(_label("Edit keyframes, preview rendered frames and start or follow a render "
+                              "in the Timeline.", "hint", wrap=True))
+        self.open_timeline_button = QPushButton("Open in Timeline")
+        self.open_timeline_button.setObjectName("primaryAction")
+        self.open_timeline_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.open_timeline_button.clicked.connect(self._open_in_timeline)
+        tbox.addWidget(self.open_timeline_button, 0, Qt.AlignmentFlag.AlignLeft)
+        self.timeline_card.setVisible(self._can_open_timeline)
+        dbox.addWidget(self.timeline_card)
 
         renders = QFrame()
         renders.setObjectName("card")
@@ -703,13 +712,13 @@ class ProjectsPage(QFrame):
 
     def _cards_project(self, project_id: str | None) -> None:
         self.assets_card.set_project(project_id)
-        if self.render_card is not None:
-            self.render_card.set_project(project_id)
 
     def _cards_locked(self, locked: bool) -> None:
         self.assets_card.set_locked(locked)
-        if self.render_card is not None:
-            self.render_card.set_locked(locked)
+
+    def _open_in_timeline(self) -> None:
+        if self._selected and self._loaded is not None:
+            self.open_timeline.emit(self._selected)
 
     def _reload_after_asset_change(self) -> None:
         # The source image changed the project's revision; fetch the new ETag (form is clean).

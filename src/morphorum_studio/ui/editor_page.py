@@ -35,11 +35,14 @@ from morphorum_studio.backend.timeline import (
     plan_move,
     plan_set,
 )
+from morphorum_studio.ui.player_panel import PlayerPanel
 from morphorum_studio.ui.projects_service import ProjectsService
+from morphorum_studio.ui.render_card import RenderCard
 from morphorum_studio.ui.timeline_service import TimelineService
 from morphorum_studio.ui.timeline_view import CurveView, TimelineView
 
 SCRUB_DEBOUNCE_MS = 120
+FRAME_CACHE = 32
 
 
 def _label(text: str, name: str, wrap: bool = False) -> QLabel:
@@ -53,8 +56,15 @@ class EditorPage(QWidget):
     open_connections = Signal()
 
     def __init__(self, session: BackendSession, projects: ProjectsService,
-                 service: TimelineService) -> None:
+                 service: TimelineService, render_service=None, video_service=None) -> None:
         super().__init__()
+        self._render_service = render_service
+        self._video_service = video_service
+        self._player_job = None  # newest render of this project that has rendered frames
+        self._frames: dict[tuple[str, int], bytes] = {}
+        self._frame_failed: set[tuple[str, int]] = set()
+        self._frame_inflight: tuple[str, int] | None = None
+        self._pending_open: str | None = None
         self.setObjectName("pageSurface")
         self._session = session
         self._projects = projects
@@ -64,10 +74,11 @@ class EditorPage(QWidget):
         self._track_id: str | None = None
         self._error = ""
         self._build()
+        self._reset_preview()
         self._debounce = QTimer(self)
         self._debounce.setSingleShot(True)
         self._debounce.setInterval(SCRUB_DEBOUNCE_MS)
-        self._debounce.timeout.connect(lambda: self._service.request_frame(self.view.frame))
+        self._debounce.timeout.connect(self._settled)
         projects.listed.connect(self._listed)
         service.loaded.connect(self._loaded)
         service.series_ready.connect(self._series_ready)
@@ -79,14 +90,19 @@ class EditorPage(QWidget):
         service.validated.connect(self._validated)
         service.history_changed.connect(self._update_edit_controls)
         session.changed.connect(self._update)
+        if render_service is not None:
+            render_service.list_ready.connect(self._renders_listed)
+            render_service.job_updated.connect(self._render_job_updated)
+            render_service.frame_ready.connect(self._frame_arrived)
+            render_service.cleared.connect(self._renders_cleared)
         self._update()
 
     def _build(self) -> None:
         box = QVBoxLayout(self)
         box.setContentsMargins(38, 34, 38, 24)
         box.setSpacing(10)
-        box.addWidget(_label("EDITOR / STUDIO", "sectionCaption"))
-        box.addWidget(_label("Animation timeline", "pageHeading"))
+        box.addWidget(_label("TIMELINE / STUDIO", "sectionCaption"))
+        box.addWidget(_label("Timeline", "pageHeading"))
         self.status = _label("", "pageDescription", wrap=True)
         box.addWidget(self.status)
 
@@ -95,12 +111,12 @@ class EditorPage(QWidget):
         page_scroll.setWidgetResizable(True)
         page_scroll.setFrameShape(QFrame.Shape.NoFrame)
         body = QWidget()
-        body.setMinimumSize(720, 500)
+        body.setMinimumSize(900, 620)
         page_scroll.setWidget(body)
         box.addWidget(page_scroll, 1)
-        box = QVBoxLayout(body)
-        box.setContentsMargins(0, 0, 0, 0)
-        box.setSpacing(10)
+        outer = QVBoxLayout(body)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(10)
 
         top = QHBoxLayout()
         self.project = QComboBox()
@@ -120,7 +136,18 @@ class EditorPage(QWidget):
         top.addWidget(self.frame_spin)
         top.addWidget(self.time_label)
         top.addStretch(1)
-        box.addLayout(top)
+        outer.addLayout(top)
+
+        main = QHBoxLayout()
+        main.setSpacing(14)
+        outer.addLayout(main, 1)
+
+        # -- centre: player over the tracks dock
+        centre = QVBoxLayout()
+        centre.setSpacing(10)
+        self.player = PlayerPanel()
+        self.player.setMinimumHeight(250)
+        centre.addWidget(self.player, 3)
 
         self.view = TimelineView()
         scroll = QScrollArea()
@@ -128,10 +155,10 @@ class EditorPage(QWidget):
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setWidget(self.view)
         scroll.setMinimumHeight(170)
-        box.addWidget(scroll, 1)
+        centre.addWidget(scroll, 2)
 
-        lower = QHBoxLayout()
-        lower.setSpacing(14)
+        glance = QHBoxLayout()
+        glance.setSpacing(14)
         left = QVBoxLayout()
         left.addWidget(_label("At this frame", "fieldLabel"))
         self.values = QTableWidget(0, 2)
@@ -140,19 +167,45 @@ class EditorPage(QWidget):
         self.values.horizontalHeader().setStretchLastSection(True)
         self.values.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.values.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self.values.setMinimumHeight(110)
         left.addWidget(self.values, 1)
         self.prompt_view = QPlainTextEdit()
         self.prompt_view.setReadOnly(True)
         self.prompt_view.setMaximumHeight(90)
         left.addWidget(self.prompt_view)
+        glance.addLayout(left, 1)
+        checks = QVBoxLayout()
         self.check_label = _label("", "fieldLabel", wrap=True)
-        left.addWidget(self.check_label)
+        checks.addWidget(self.check_label)
         self.issues = QListWidget()
-        self.issues.setMaximumHeight(96)
-        left.addWidget(self.issues)
-        lower.addLayout(left, 1)
+        self.issues.setMinimumHeight(110)
+        checks.addWidget(self.issues, 1)
+        glance.addLayout(checks, 1)
+        centre.addLayout(glance, 2)
+        centre_widget = QWidget()
+        centre_widget.setLayout(centre)
+        main.addWidget(centre_widget, 1)
 
-        right = QVBoxLayout()
+        # -- right: keyframe inspector, then the render card
+        side = QScrollArea()
+        side.setObjectName("connectionsScroll")
+        side.setWidgetResizable(True)
+        side.setFrameShape(QFrame.Shape.NoFrame)
+        side.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        side.setFixedWidth(392)
+        side_content = QWidget()
+        side_content.setObjectName("connectionsContent")
+        side.setWidget(side_content)
+        sbox = QVBoxLayout(side_content)
+        sbox.setContentsMargins(0, 0, 8, 0)
+        sbox.setSpacing(12)
+
+        inspector = QFrame()
+        inspector.setObjectName("card")
+        right = QVBoxLayout(inspector)
+        right.setContentsMargins(16, 14, 16, 16)
+        right.setSpacing(8)
+        right.addWidget(_label("Keyframe inspector", "cardTitle"))
         self.track_title = _label("Select a track", "fieldLabel")
         right.addWidget(self.track_title)
         self.curve = CurveView()
@@ -164,6 +217,7 @@ class EditorPage(QWidget):
         self.keys.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.keys.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.keys.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.keys.setMinimumHeight(120)
         right.addWidget(self.keys, 1)
         self.value_edit = QPlainTextEdit()
         self.value_edit.setPlaceholderText("Keyframe value (number, expression such as 1+0.5*sin(t), or prompt text)")
@@ -190,30 +244,46 @@ class EditorPage(QWidget):
         for widget in (self.set_button, self.update_button, self.delete_button, self.move_button,
                        self.undo_button, self.redo_button):
             widget.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        for widget in (self.set_button, self.update_button, self.move_button, self.delete_button):
+        first_row = QHBoxLayout()
+        first_row.setSpacing(6)
+        first_row.addWidget(self.set_button)
+        first_row.addWidget(self.update_button)
+        first_row.addStretch(1)
+        right.addLayout(first_row)
+        for widget in (self.move_button, self.delete_button):
             edit_row.addWidget(widget)
         edit_row.addStretch(1)
         right.addLayout(edit_row)
         history_row = QHBoxLayout()
         history_row.setSpacing(6)
         history_row.addWidget(QLabel("Interpolation"))
-        history_row.addWidget(self.interp)
-        history_row.addStretch(1)
-        history_row.addWidget(self.undo_button)
-        history_row.addWidget(self.redo_button)
+        history_row.addWidget(self.interp, 1)
         right.addLayout(history_row)
+        undo_row = QHBoxLayout()
+        undo_row.setSpacing(6)
+        undo_row.addWidget(self.undo_button)
+        undo_row.addWidget(self.redo_button)
+        undo_row.addStretch(1)
+        right.addLayout(undo_row)
         self.edit_status = _label("", "hint", wrap=True)
         right.addWidget(self.edit_status)
-        lower.addLayout(right, 1)
-        box.addLayout(lower, 3)
-        box.addWidget(_label("Values and curves are evaluated by the backend. Each edit is saved to the "
-                             "backend immediately and can be undone here.", "hint", wrap=True))
+        right.addWidget(_label("Values and curves are evaluated by the backend. Each edit is saved to the "
+                               "backend immediately and can be undone here.", "hint", wrap=True))
+        sbox.addWidget(inspector)
+
+        self.render_card = None
+        if self._render_service is not None:
+            self.render_card = RenderCard(self._render_service, self._video_service, compact=True)
+            sbox.addWidget(self.render_card)
+        sbox.addStretch(1)
+        main.addWidget(side)
 
         self.project.activated.connect(self._project_chosen)
         self.reload.clicked.connect(self._reload)
         self.frame_spin.valueChanged.connect(self._spin_changed)
         self.view.frame_changed.connect(self._view_frame)
         self.view.track_selected.connect(self._track_selected)
+        self.player.frame_requested.connect(self._player_frame)
         self.keys.currentCellChanged.connect(lambda *_: self._key_selected())
         self.issues.itemActivated.connect(self._issue_chosen)
         self.issues.itemClicked.connect(self._issue_chosen)
@@ -263,10 +333,28 @@ class EditorPage(QWidget):
         self.project.setCurrentIndex(index if index >= 0 else 0)
         self.project.blockSignals(False)
         self._update()
+        wanted, self._pending_open = self._pending_open, None
+        if wanted and self.project.findData(wanted) >= 0:
+            self.project.setCurrentIndex(self.project.findData(wanted))
+            self._project_chosen(self.project.currentIndex())
+
+    def open_project(self, project_id: str) -> None:
+        """Show ``project_id`` (used by Library and Home); waits for the project list if needed."""
+        index = self.project.findData(project_id)
+        if index >= 0:
+            self.project.setCurrentIndex(index)
+            self._project_chosen(index)
+        else:
+            self._pending_open = project_id
+            if self._service.available:
+                self._projects.refresh()
 
     def _project_chosen(self, _index: int) -> None:
         project_id = self.project.currentData()
         self._error = ""
+        self._reset_preview()
+        if self.render_card is not None:
+            self.render_card.set_project(project_id)
         if project_id:
             self._service.load(project_id)
         else:
@@ -297,6 +385,8 @@ class EditorPage(QWidget):
         self.frame_spin.setValue(0)
         self.frame_spin.blockSignals(False)
         self.time_label.setText("")
+        self.player.set_range(0, 0.0)
+        self._reset_preview()
         self._update()
 
     # -- timeline -----------------------------------------------------------------------
@@ -306,6 +396,10 @@ class EditorPage(QWidget):
         self._timeline = timeline
         self._track_id = None
         self.view.set_timeline(timeline)
+        self.player.set_range(timeline.max_frames, timeline.fps)
+        if self.render_card is not None:
+            self.render_card.set_playhead(0)
+        self._request_preview(0)
         self.frame_spin.blockSignals(True)
         self.frame_spin.setRange(0, timeline.max_frames - 1)
         self.frame_spin.setValue(0)
@@ -334,7 +428,23 @@ class EditorPage(QWidget):
         self.view.set_frame(frame)
         self._frame_moved(frame)
 
+    def _player_frame(self, frame: int) -> None:
+        """Transport button or playback moved the playhead."""
+        self.view.set_frame(frame)
+        self.frame_spin.blockSignals(True)
+        self.frame_spin.setValue(frame)
+        self.frame_spin.blockSignals(False)
+        self._frame_moved(frame)
+        self._request_preview(frame)
+
+    def _settled(self) -> None:
+        self._service.request_frame(self.view.frame)
+        self._request_preview(self.view.frame)
+
     def _frame_moved(self, frame: int) -> None:
+        self.player.set_frame(frame)
+        if self.render_card is not None:
+            self.render_card.set_playhead(frame)
         self.curve.set_frame(frame)
         self._show_frame_label(frame)
         self._update_edit_controls()
@@ -355,6 +465,76 @@ class EditorPage(QWidget):
         if resolved.seed is not None:
             lines.append(f"Seed: {resolved.seed}")
         self.prompt_view.setPlainText("\n".join(lines))
+
+
+    # -- rendered-frame preview (layout step 4) ---------------------------------------------
+
+    def _reset_preview(self) -> None:
+        self._player_job = None
+        self._frames.clear()
+        self._frame_failed = set()
+        self._frame_inflight = None
+        if self._render_service is None:
+            self.player.show_message("Rendered frames appear here once the backend can render.")
+        else:
+            self.player.show_message("Open a project to preview its rendered frames")
+
+    def _renders_listed(self, project_id: str, jobs) -> None:
+        if project_id != self.project.currentData():
+            return
+        framed = [j for j in jobs if j.latest_frame is not None]
+        self._player_job = max(framed, key=lambda j: j.created_at or "") if framed else None
+        self._request_preview(self.view.frame)
+
+    def _render_job_updated(self, job) -> None:
+        if job.project_id != self.project.currentData() or job.latest_frame is None:
+            return
+        current = self._player_job
+        if current is None or job.id == current.id or (job.created_at or "") >= (current.created_at or ""):
+            self._player_job = job
+            self._request_preview(self.view.frame)
+
+    def _renders_cleared(self) -> None:
+        self._reset_preview()
+
+    def _request_preview(self, frame: int) -> None:
+        if self._timeline is None or self._render_service is None:
+            return
+        job, project_id = self._player_job, self.project.currentData()
+        if job is None or project_id is None:
+            self.player.show_message("No rendered frames yet",
+                                     "Render the project from the panel on the right to preview it here.")
+            return
+        latest = job.latest_frame or 0
+        if frame > latest:
+            self.player.show_message(f"Frame {frame + 1} has not been rendered yet",
+                                     f"The latest render has frames 1 to {latest + 1}.")
+            return
+        key = (job.id, frame)
+        data = self._frames.get(key)
+        if data is not None:
+            self.player.show_png(data, f"Render {job.id} · frame {frame + 1}")
+        elif key in self._frame_failed:
+            self.player.show_message("This frame is not available")
+        elif self._frame_inflight is None:
+            self._frame_inflight = key
+            self.player.caption.setText("Loading frame…")
+            self._render_service.fetch_frame(project_id, job.id, frame)
+
+    def _frame_arrived(self, render_id: str, frame: int, data) -> None:
+        job = self._player_job
+        if job is None or render_id != job.id:
+            return
+        key = (render_id, frame)
+        if data:
+            while len(self._frames) >= FRAME_CACHE:
+                del self._frames[next(iter(self._frames))]
+            self._frames[key] = data
+        elif key == self._frame_inflight:
+            self._frame_failed.add(key)
+        if key == self._frame_inflight:
+            self._frame_inflight = None
+        self._request_preview(self.view.frame)
 
     # -- track selection ----------------------------------------------------------------
 

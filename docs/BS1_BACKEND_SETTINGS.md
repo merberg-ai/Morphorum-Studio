@@ -30,8 +30,8 @@ with a warning; the access token is never displayed.
 
 ## Windows checklist
 1. Connected to the managed backend: Settings > Backend settings shows SDXL, Flux and Z-Image cards matching the web UI.
-2. Add a models folder with **Browse**, **Check** it (✓ Folder found), **Save**, then **Rescan models**: Image Lab lists the models.
-3. Type a folder that does not exist: Check says so; Save still works (the web UI allows it) and the card shows ✗.
+2. Add a models folder with **Browse**, **Check** it (OK: Folder found), **Save**, then **Rescan models**: Image Lab lists the models.
+3. Type a folder that does not exist: Check says so; Save still works (the web UI allows it) and the card shows Problem:.
 4. Toggle both memory options, Save, open the web UI settings page: the same values appear. Revert discards unsaved edits.
 5. Connect to a remote backend: no Browse buttons; everything else works.
 6. Disconnect: the tab says to connect. Reconnect: Reload fills it.

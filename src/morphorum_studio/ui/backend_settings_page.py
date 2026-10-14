@@ -235,7 +235,7 @@ class BackendSettingsPage(QWidget):
 
         def show_message() -> None:
             found = self._checks.get(folders[index].strip())
-            message.setText(("✓  " if found.ok else "✗  ") + found.message if found else "")
+            message.setText(("OK: " if found.ok else "Problem: ") + found.message if found else "")
             message.setVisible(bool(found))
 
         def changed(text: str) -> None:

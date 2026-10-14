@@ -178,6 +178,15 @@ class EditorPage(QWidget):
         self.interp = QComboBox()
         self.undo_button = QPushButton("Undo")
         self.redo_button = QPushButton("Redo")
+        self.reload.setToolTip("Read the timeline from the backend again (F5)")
+        self.frame_spin.setToolTip("Playhead frame. Left/Right arrows step by one, Shift by ten.")
+        self.set_button.setToolTip("Add a keyframe at the playhead, or replace the one that is there")
+        self.update_button.setToolTip("Change the value of the selected keyframe")
+        self.delete_button.setToolTip("Remove the selected keyframe")
+        self.move_button.setToolTip("Move the selected keyframe to the playhead frame")
+        self.interp.setToolTip("How values blend from the selected keyframe to the next one")
+        self.undo_button.setToolTip("Undo the last edit (Ctrl+Z)")
+        self.redo_button.setToolTip("Redo the edit you undid (Ctrl+Shift+Z)")
         for widget in (self.set_button, self.update_button, self.delete_button, self.move_button,
                        self.undo_button, self.redo_button):
             widget.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)

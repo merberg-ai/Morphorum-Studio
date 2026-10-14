@@ -48,8 +48,9 @@ def format_entry(entry: ConsoleEntry) -> str:
 class ConsolePage(QWidget):
     open_connections = Signal()
 
-    def __init__(self, session: BackendSession, service: ConsoleService) -> None:
+    def __init__(self, session: BackendSession, service: ConsoleService, preferences=None) -> None:
         super().__init__()
+        self._prefs = preferences
         self.setObjectName("pageSurface")
         self._session = session
         self._service = service
@@ -114,6 +115,13 @@ class ConsolePage(QWidget):
         self.count = _label("", "hint")
         box.addWidget(self.count)
 
+        if self._prefs is not None:  # restore the remembered view
+            self.level.setCurrentIndex(max(0, self.level.findData(self._prefs.ui("console/level", "debug"))))
+            self.follow.setChecked(self._prefs.ui("console/follow", "1") == "1")
+            self.wrap.setChecked(self._prefs.ui("console/wrap", "0") == "1")
+        self.level.currentIndexChanged.connect(lambda _i: self._remember())
+        self.follow.toggled.connect(lambda _c: self._remember())
+        self.wrap.toggled.connect(lambda _c: self._remember())
         self.level.currentIndexChanged.connect(lambda _i: self._rebuild())
         self.category.currentIndexChanged.connect(lambda _i: self._rebuild())
         self.search.textChanged.connect(lambda _t: self._rebuild())
@@ -148,6 +156,12 @@ class ConsolePage(QWidget):
             self.category.blockSignals(True)
             self.category.addItem(name, name)
             self.category.blockSignals(False)
+
+    def _remember(self) -> None:
+        if self._prefs is not None:
+            self._prefs.set_ui("console/level", str(self.level.currentData()))
+            self._prefs.set_ui("console/follow", "1" if self.follow.isChecked() else "0")
+            self._prefs.set_ui("console/wrap", "1" if self.wrap.isChecked() else "0")
 
     def _rebuild(self) -> None:
         held = list(self._service.entries)

@@ -387,6 +387,9 @@ QScrollBar::handle:vertical {
     min-height: 26px;
     border-radius: 4px;
 }
+QScrollBar::handle:vertical:disabled, QScrollBar::handle:horizontal:disabled {
+    background: transparent;
+}
 QScrollBar::handle:vertical:hover {
     background: $line2;
 }

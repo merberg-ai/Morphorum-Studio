@@ -220,7 +220,7 @@ class StudioMainWindow(QMainWindow):
                 self.editor_page = EditorPage(self.session, self.projects_service, self.timeline_service)
                 self.pages.addWidget(self.editor_page)
             elif page_name == "Console":
-                self.console_page = ConsolePage(self.session, self.console_service)
+                self.console_page = ConsolePage(self.session, self.console_service, self.preferences)
                 self.pages.addWidget(self.console_page)
             elif page_name == "Connections":
                 self.connections_panel = ConnectionsPanel(
@@ -291,7 +291,18 @@ class StudioMainWindow(QMainWindow):
         quit_action.setShortcut(QKeySequence("Ctrl+Q"))
         quit_action.triggered.connect(self.close)
         self.addAction(quit_action)
-        self.title_bar.add_menu("File", [quit_action])
+        new_action = self._page_action("New project", "Ctrl+N", "Projects",
+                                       lambda: self.projects_page.new_button.click())
+        save_action = self._page_action("Save project changes", "Ctrl+S", "Projects",
+                                        lambda: self.projects_page.save_button.click())
+        self.title_bar.add_menu("File", [new_action, save_action, None, quit_action])
+
+        undo_action = self._page_action("Undo keyframe edit", "Ctrl+Z", "Editor",
+                                        lambda: self.editor_page.undo_button.click())
+        redo_action = self._page_action("Redo keyframe edit", "Ctrl+Shift+Z", "Editor",
+                                        lambda: self.editor_page.redo_button.click())
+        redo_action.setShortcuts([QKeySequence("Ctrl+Shift+Z"), QKeySequence("Ctrl+Y")])
+        self.title_bar.add_menu("Edit", [undo_action, redo_action])
 
         view_actions: list[QAction | None] = []
         for index, name in enumerate(names):
@@ -301,11 +312,55 @@ class StudioMainWindow(QMainWindow):
             action.triggered.connect(lambda _checked=False, row=index: self.navigation.setCurrentRow(row))
             self.addAction(action)
             view_actions.append(action)
+        view_actions.append(None)
+        refresh = QAction("Refresh this page", self)
+        refresh.setShortcut(QKeySequence("F5"))
+        refresh.triggered.connect(self._refresh_page)
+        self.addAction(refresh)
+        view_actions.append(refresh)
         self.title_bar.add_menu("View", view_actions)
 
+        keys = QAction("Keyboard shortcuts", self)
+        keys.setShortcut(QKeySequence("F1"))
+        keys.triggered.connect(self._show_shortcuts)
+        self.addAction(keys)
         about = QAction("About Morphorum Studio", self)
         about.triggered.connect(self._show_about)
-        self.title_bar.add_menu("Help", [about])
+        self.title_bar.add_menu("Help", [keys, about])
+
+    def _page_action(self, text: str, shortcut: str, page: str, run) -> QAction:
+        """An action that only acts while ``page`` is showing, so shortcuts never hit another page.
+
+        Text fields keep their own Ctrl+Z / Ctrl+S-style handling: Qt gives a focused text editor
+        first claim on its standard keys, so these never fight typing."""
+        action = QAction(text, self)
+        action.setShortcut(QKeySequence(shortcut))
+        names = [entry[0] for entry in PAGES]
+        action.triggered.connect(
+            lambda _checked=False: run() if self.navigation.currentRow() == names.index(page) else None)
+        self.addAction(action)
+        return action
+
+    def _refresh_page(self) -> None:
+        name = PAGES[self.navigation.currentRow()][0]
+        button = {"Projects": lambda: self.projects_page.refresh_button,
+                  "Editor": lambda: self.editor_page.reload}.get(name)
+        if button is not None:
+            button().click()
+
+    def _show_shortcuts(self) -> None:
+        QMessageBox.information(
+            self, "Keyboard shortcuts",
+            "Ctrl+1 … Ctrl+9\tSwitch workspace\n"
+            "F5\tRefresh the Projects list / reload the Editor timeline\n"
+            "Ctrl+N\tNew project (Projects)\n"
+            "Ctrl+S\tSave project changes (Projects)\n"
+            "Ctrl+Z\tUndo keyframe edit (Editor)\n"
+            "Ctrl+Shift+Z or Ctrl+Y\tRedo keyframe edit (Editor)\n"
+            "← →  (Shift ×10)\tStep the timeline playhead (Editor)\n"
+            "F1\tThis list\n"
+            "Ctrl+Q\tQuit\n\n"
+            "While you are typing in a text box, its own editing keys take priority.")
 
     def _show_about(self) -> None:
         QMessageBox.about(

@@ -104,6 +104,7 @@ class ModelsDialog(QDialog):
         self.open_button = QPushButton("Open Civitai page")
         self.lookup_note = QLabel("Optional. Sends only the file's SHA-256 hash to civitai.com.")
         self.lookup_note.setWordWrap(True)
+        self.lookup_button.setToolTip("Optional online lookup; only the file's SHA-256 is sent to civitai.com")
         look.addWidget(self.lookup_button)
         look.addWidget(self.open_button)
         look.addWidget(self.lookup_note, 1)

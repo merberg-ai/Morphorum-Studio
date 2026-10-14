@@ -56,6 +56,13 @@ class StudioPreferences:
     def set_workspace(self, name: str) -> None:
         self.settings.setValue("window/workspace", name)
 
+    def ui(self, key: str, default: str = "") -> str:
+        """A remembered view setting (filters, toggles) under ``ui/<key>``."""
+        return str(self.settings.value(f"ui/{key}", default) or default)
+
+    def set_ui(self, key: str, value: str) -> None:
+        self.settings.setValue(f"ui/{key}", value)
+
     def save_window(self, window) -> None:
         self.settings.setValue("window/geometry", window.saveGeometry())
         self.settings.setValue("window/maximized", window.isMaximized())

@@ -123,7 +123,7 @@ QToolButton#winClose:hover {
 }
 QPushButton#searchButton {
     min-height: 0px;
-    padding: 0px 10px;
+    padding: 0px 58px 0px 10px;
     text-align: left;
     border-radius: 13px;
     border: 1px solid $line2;
@@ -131,7 +131,7 @@ QPushButton#searchButton {
     color: $faint;
     font-size: 12px;
 }
-QPushButton#searchButton:hover, QPushButton#searchButton:focus {
+QPushButton#searchButton:hover {
     background: $raised;
     color: $dim;
     border-color: $cyan;

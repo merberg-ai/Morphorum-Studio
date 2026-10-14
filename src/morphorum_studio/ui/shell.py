@@ -143,6 +143,7 @@ class TitleBar(QWidget):
         self.search_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.search_button.setToolTip("Command palette (Ctrl+K)")
         self.search_button.setAccessibleName("Open command palette")
+        self.search_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # Ctrl+K is the keyboard route
         self.search_button.setFixedHeight(26)
         self.search_button.setMinimumWidth(150)
         self.search_button.setMaximumWidth(280)

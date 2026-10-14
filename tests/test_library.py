@@ -27,7 +27,8 @@ QApplication.instance() or QApplication(["morphorum-studio-tests"])
 
 def test_columns_fit_the_width_and_stay_in_range():
     assert columns_for(0) == 1 and columns_for(200) == 1
-    assert columns_for(270) == 1 and columns_for(554) == 2 and columns_for(830) == 3
+    assert columns_for(270) == 1 and columns_for(554) == 2 and columns_for(837) == 2
+    assert columns_for(838) == 3
     assert columns_for(5000) == 5
 
 
@@ -93,7 +94,7 @@ def test_model_grid_filters_by_family_and_search_and_only_loras_inspect():
     grid.cards[0].clicked.emit(grid.cards[0].model_id)
     assert asked == ["a" * 24]
     grid.search.setText("nothing")
-    assert grid.cards == [] and "No loras match" in grid.note.text().lower()
+    assert grid.cards == [] and "no loras match" in grid.note.text().lower()
     grid.family.setCurrentIndex(0)
     grid.search.clear()
     plain = ModelGrid("Models", inspectable=False)

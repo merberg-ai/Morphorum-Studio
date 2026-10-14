@@ -86,9 +86,9 @@ class FakeProcess(QObject):
 
 def installed(tmp_path, name="morph"):
     folder = tmp_path / name
-    (folder / "backend" / "morphorum").mkdir(parents=True)
+    (folder / "backend" / "morphorum").mkdir(parents=True, exist_ok=True)
     python = managed.python_path(folder)
-    python.parent.mkdir(parents=True)
+    python.parent.mkdir(parents=True, exist_ok=True)
     python.write_text("")
     (folder / "VERSION").write_text("0.1.0a1\n")
     return folder

@@ -224,3 +224,146 @@ def clear_record(path: Path) -> None:
 def record_matches(record: dict | None, folder: str, port: int) -> bool:
     return bool(record) and record["port"] == int(port) and \
         os.path.normcase(os.path.abspath(record["folder"])) == os.path.normcase(os.path.abspath(folder))
+
+
+# ---------------------------------------------------------------------------- installing
+#
+# Studio does not reimplement the backend's installer. It downloads the backend's own
+# ``scripts/bootstrap.ps1`` for the chosen branch and runs it with an explicit folder, branch
+# and port, so the installer never has to ask a question. Only the person's consent starts it.
+
+REPO = "merberg-ai/Morphorum"
+DEFAULT_BRANCH = "main"
+BOOTSTRAP_URL = "https://raw.githubusercontent.com/" + REPO + "/{branch}/scripts/bootstrap.ps1"
+MIN_FREE_BYTES = 8 * 1024**3  # the backend's own installer wants 8 GiB free
+MAX_BOOTSTRAP_BYTES = 512 * 1024
+_BRANCH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,99}")
+_MARKER = re.compile(r"^\s*(>>|\[>\]|\[\+\]|\[!\]|\[X\])\s*(.*)$")
+KIND_SECTION, KIND_STEP, KIND_OK, KIND_WARN, KIND_FAIL, KIND_TEXT = (
+    "section", "step", "ok", "warn", "fail", "text")
+_MARKER_KIND = {">>": KIND_SECTION, "[>]": KIND_STEP, "[+]": KIND_OK, "[!]": KIND_WARN, "[X]": KIND_FAIL}
+
+
+def valid_branch(branch: str) -> bool:
+    return bool(_BRANCH.fullmatch(branch)) and ".." not in branch and not branch.endswith(("/", ".lock"))
+
+
+def bootstrap_url(branch: str = DEFAULT_BRANCH) -> str:
+    if not valid_branch(branch):
+        raise ValueError("That is not a usable branch name.")
+    return BOOTSTRAP_URL.format(branch=branch)
+
+
+def is_checkout(folder: str | os.PathLike) -> bool:
+    """A folder the backend's installer may resume: a git checkout or an install marker."""
+    path = Path(folder)
+    return (path / ".git").exists() or (path / "data" / "install.json").is_file()
+
+
+@dataclass
+class Preflight:
+    problems: list[str]  # any of these stops the install
+    warnings: list[str]
+    resume: bool = False  # an unfinished checkout will be continued, not replaced
+
+    @property
+    def ok(self) -> bool:
+        return not self.problems
+
+
+def _nearest_existing(path: Path) -> Path:
+    for candidate in (path, *path.parents):
+        if candidate.exists():
+            return candidate
+    return path
+
+
+def _free_bytes(path: Path) -> int | None:
+    import shutil
+    try:
+        return shutil.disk_usage(_nearest_existing(path)).free
+    except OSError:
+        return None
+
+
+def preflight(folder: str, port: int, branch: str = DEFAULT_BRANCH, *, windows: bool | None = None,
+              free_bytes: int | None = None) -> Preflight:
+    """Everything that can be checked before touching the disk. Never raises."""
+    windows = (os.name == "nt") if windows is None else windows
+    problems: list[str] = []
+    warnings: list[str] = []
+    resume = False
+    if not windows:
+        problems.append("Installing from Studio is available on Windows. "
+                        "On this system, install Morphorum yourself and choose its folder.")
+    if not valid_branch(branch):
+        problems.append("The backend branch name is not valid.")
+    if type(port) is not int or not 1 <= port <= 65535:
+        problems.append("The port must be between 1 and 65535.")
+    if not folder or _CONTROL.search(folder):
+        problems.append("Choose a folder for the backend.")
+        return Preflight(problems, warnings)
+    path = Path(folder)
+    if not path.is_absolute():
+        problems.append("The folder must be a full path.")
+        return Preflight(problems, warnings)
+    if path == Path(path.anchor):
+        problems.append("Choose a folder, not a drive root.")
+        return Preflight(problems, warnings)
+    if path.exists():
+        if not path.is_dir():
+            problems.append("That path is a file, not a folder.")
+        elif is_checkout(path):
+            resume = True
+        elif any(path.iterdir()):
+            problems.append("That folder is not empty and is not a Morphorum folder. Choose an empty or new folder.")
+    parent = _nearest_existing(path)
+    if not os.access(parent, os.W_OK):
+        problems.append("Studio cannot write to that location. Choose another folder.")
+    free = _free_bytes(path) if free_bytes is None else free_bytes
+    if free is not None and free < MIN_FREE_BYTES and not resume:
+        problems.append(f"At least {MIN_FREE_BYTES // 1024**3} GiB of free space is needed; "
+                        f"{free / 1024**3:.1f} GiB is available.")
+    if windows and len(str(path)) > 120:
+        warnings.append("This path is long. Windows can fail on long paths; a shorter folder is safer.")
+    if windows and not path.anchor.upper().startswith(os.environ.get("SystemDrive", "C:").upper()):
+        warnings.append("This is not the system drive. Git and FFmpeg still install on the system drive.")
+    if port_open(port):
+        warnings.append(f"Port {port} is in use right now. You can change the port after installing.")
+    return Preflight(problems, warnings, resume)
+
+
+def install_command(script: Path, folder: Path, branch: str, port: int) -> tuple[str, list[str]]:
+    """The backend's own bootstrap, given every answer up front so it never prompts."""
+    if not valid_branch(branch):
+        raise ValueError("That is not a usable branch name.")
+    return "powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script),
+                              "-InstallDir", str(folder), "-Branch", branch, "-Port", str(int(port))]
+
+
+def parse_install_line(line: str) -> tuple[str, str]:
+    """Classify one line of installer output by the markers the backend prints."""
+    text = clean_log_line(line).strip()
+    found = _MARKER.match(text)
+    if found:
+        return _MARKER_KIND[found.group(1)], found.group(2).strip()
+    return KIND_TEXT, text
+
+
+def fetch_bootstrap(url: str, dest: Path, opener=None) -> None:
+    """Download the backend's bootstrap script (https only, size-capped). Raises OSError."""
+    import urllib.error
+    import urllib.request
+
+    if not url.startswith("https://raw.githubusercontent.com/"):
+        raise OSError("Refusing to download the installer from an unexpected address.")
+    open_url = opener or (lambda u: urllib.request.urlopen(u, timeout=30))
+    try:
+        with open_url(url) as response:
+            data = response.read(MAX_BOOTSTRAP_BYTES + 1)
+    except (urllib.error.URLError, TimeoutError, ValueError) as exc:
+        raise OSError(f"Could not download the installer: {getattr(exc, 'reason', exc)}") from exc
+    if not data or len(data) > MAX_BOOTSTRAP_BYTES or b"InstallDir" not in data:
+        raise OSError("The downloaded installer does not look right, so it was not run.")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(data)

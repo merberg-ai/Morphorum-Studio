@@ -379,7 +379,7 @@ class FakeIssuer(QObject):
 
 
 class PanelRig:
-    def __init__(self, tmp_path, jobs=0, ask=None):
+    def __init__(self, tmp_path, jobs=0, ask=None, installer=None, confirm_close=None):
         FakeIssuer.instances = []
         self.tmp = tmp_path
         self.holder = QWidget()
@@ -397,7 +397,8 @@ class PanelRig:
             self.connections, self.rig.backend, store=managed.ManagedStore(tmp_path / "managed.json"),
             vault=self.vault, issuer_factory=FakeIssuer, active_jobs=lambda: self.jobs,
             ask_exit=ask or (lambda n: "stop"), choose_folder=lambda parent, start: str(self.folder),
-            open_folder=lambda path: setattr(self, "opened", path), parent=self.holder)
+            open_folder=lambda path: setattr(self, "opened", path), installer=installer,
+            confirm_close_install=confirm_close, parent=self.holder)
 
     def _connect(self):
         self.connected_calls += 1

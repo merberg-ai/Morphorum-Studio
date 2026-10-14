@@ -73,7 +73,7 @@ will be lost, and offers to open the folder first. Studio never deletes anything
 1. **C1 Mode and manage an existing checkout.** Simple/Advanced choice, managed profile kind, "Use an existing Morphorum
    folder" (works with your D:\Morphorum-test), start/stop/restart, health wait, adopt a running one, token handling,
    logs to Console. Cheapest to test, proves the process management before any large install.
-2. **C2 Installer.** Preflight, consent, bootstrap driver with progress and cancel, resume and repair, auto-connect when done.
+2. **C2 Installer (built, see C2_INSTALLER.md).** Preflight, consent, bootstrap driver with progress and cancel, resume and repair, auto-connect when done.
 3. **C3 Lifecycle polish.** Auto-start with Studio, exit policy, crash recovery, port conflicts, LAN toggle with warning,
    status on header and Home.
 4. **C4 Maintenance.** Update check and guarded update (only while stopped), doctor report, remove with confirmation.

@@ -203,3 +203,6 @@ See docs/S4_3_IMPORT_VALIDATION.md. From dev-ui (S4.2 merged). Backend schedule 
 
 ## S4.4 project setup (branch feature/studio-s4-4-project-setup)
 See docs/S4_4_PROJECT_SETUP.md. From dev-ui (S4.3 merged). New-project wizard (backend template, local + backend review before create, never writes camera values), prompt/source start-mode selector on the media card (conditional PUT of animation.start_mode), read-only Models and LoRAs browser with LoRA inspection. Awaiting CI and a physical Windows test.
+
+## UI pass (branch feature/studio-ui-pass)
+See docs/UI_PASS.md. From dev-ui (S4.4 merged). CI screenshot job (ui-screenshots branch), control glyphs, dialog/tab styling, Projects toolbar and scrolling Editor layout, shortcuts (F5, Ctrl+N/S/Z/Y, F1), tooltips, remembered console view. Awaiting CI and a physical Windows test. S5 follows.

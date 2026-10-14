@@ -221,7 +221,6 @@ class BackendSettingsPage(QWidget):
                 rows.addWidget(self._folder_row(folders, index, fill))
 
         add = _small(QPushButton("Add folder"), 110)
-        add.clicked.connect(lambda: (folders.append(""), fill(), self._update()))
         box.addWidget(add, 0, Qt.AlignmentFlag.AlignLeft)
         self._rows.append({"family": family, "kind": kind, "add": add})
         fill()

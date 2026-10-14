@@ -232,6 +232,8 @@ class StudioMainWindow(QMainWindow):
                 self.home_page.open_connections.connect(
                     self._show_connections
                 )
+                self.home_page.choose_mode.connect(self._show_connection_mode)
+                self.home_page.open_backend_settings.connect(self._show_backend_settings)
                 self.home_page.new_project.connect(self._palette_new_project)
                 self.home_page.open_library.connect(
                     lambda: self.navigation.setCurrentRow(names.index("Projects")))
@@ -569,6 +571,15 @@ class StudioMainWindow(QMainWindow):
         self.dashboard.refresh_now()
         if hasattr(self, "image_lab_page"):
             self.image_lab_page.reload_models()
+
+    def _show_connection_mode(self, mode: str) -> None:
+        """First-run choice on Home: open the connection tab in Simple or Advanced mode, and remember it."""
+        self._show_connections()
+        self.connection_hub.set_mode(mode)
+
+    def _show_backend_settings(self) -> None:
+        self.navigation.setCurrentRow([entry[0] for entry in PAGES].index("Settings"))
+        self.settings_page.show_backend_settings()
 
     def _show_local_backend_settings(self) -> None:
         self._show_connections()

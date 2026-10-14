@@ -29,6 +29,10 @@ class SettingsPage(QWidget):
     def show_connection(self) -> None:
         self.tabs.setCurrentIndex(0)
 
+    def show_backend_settings(self) -> None:
+        if self.backend_settings is not None:
+            self.tabs.setCurrentWidget(self.backend_settings)
+
     def _tab_changed(self, index: int) -> None:
         if self.backend_settings is not None:
             self.backend_settings.set_active(self.tabs.widget(index) is self.backend_settings)

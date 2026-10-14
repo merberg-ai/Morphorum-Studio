@@ -77,7 +77,7 @@ will be lost, and offers to open the folder first. Studio never deletes anything
 3. **C3 Lifecycle polish (built, see C3_LIFECYCLE.md).** Auto-start with Studio, exit policy, crash recovery, port conflicts, LAN toggle with warning,
    status on header and Home.
 4. **C4 Maintenance (built, awaiting test).** Update check and guarded update (only while stopped), health check, repair, branch switch, remove with typed confirmation. See `C4_MAINTENANCE.md`.
-5. **C5 First-run onboarding.** Home offers Simple or Advanced; hand-off to model setup once the API for it is confirmed.
+5. **C5 First-run onboarding (built, awaiting test; see `C5_ONBOARDING.md`).** Home offers Simple or Advanced; hand-off to model setup once the API for it is confirmed.
 
 ## Testing
 CI cannot do a multi-GB install. Tests use a tiny fake backend (a Python script that serves the health endpoint and issues a

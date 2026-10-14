@@ -19,7 +19,7 @@ with a warning; the access token is never displayed.
 - The tab loads when opened while connected; **Reload** re-reads. Disconnecting or switching backends clears it.
 - **Save** sends only what changed (`PUT /api/settings`, which merges) and shows the backend's folder checks. Empty rows
   are ignored. **Revert** discards edits. Reload and Rescan are disabled while there are unsaved edits.
-- **Rescan models** (`POST /api/models/scan`) applies folder changes and reports how many models were found, plus warnings.
+- The backend lists models only after a scan (saving settings does not scan, in the web UI either). Studio therefore **rescans by itself after saving folder changes**, reports what it found per family and kind (and explains an empty result), and refreshes Studio's own model lists (Home, Image Lab; the library and wizard read them when opened). **Rescan models** is still there for files added on disk later.
 - Paths belong to the backend's computer; the page says so. A remote backend gets text boxes only.
 - Failures show the backend's reason in the status line.
 

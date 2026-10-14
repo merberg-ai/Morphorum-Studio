@@ -287,6 +287,7 @@ class StudioMainWindow(QMainWindow):
                     self.connections_panel, self.managed_panel, self.preferences)
                 self.backend_settings_service = BackendSettingsService(self.session, self)
                 self.backend_settings_page = BackendSettingsPage(self.session, self.backend_settings_service)
+                self.backend_settings_page.models_changed.connect(self._models_rescanned)
                 self.settings_page = SettingsPage(
                     self.connection_hub, StartupSettingsPanel(self.preferences), self.backend_settings_page)
                 self.pages.addWidget(self.settings_page)
@@ -552,6 +553,12 @@ class StudioMainWindow(QMainWindow):
 
     def begin_managed_startup(self) -> None:
         self.managed_panel.begin_startup()
+
+    def _models_rescanned(self) -> None:
+        """New models were indexed: refresh every list Studio keeps."""
+        self.dashboard.refresh_now()
+        if hasattr(self, "image_lab_page"):
+            self.image_lab_page.reload_models()
 
     def show_startup_failure(self, reason: str) -> None:
         """The managed backend could not be brought up; show Settings where the reason and Start are."""

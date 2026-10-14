@@ -99,7 +99,7 @@ def rig(url="http://10.0.0.5:7866", connect=True, chosen=""):
     session = BackendSession(client_factory=lambda base, token, timeout=6.0: client)
     service = BackendSettingsService(session, runner=sync_runner)
     page = BackendSettingsPage(session, service, choose_folder=lambda parent, start: chosen)
-    page.show()
+    page.set_active(True)
     if connect:
         info = SessionInfo("p1", "Workshop", url, "0.1.0", "backend-only", "i1", "b1", {})
         session.connected(info, "t")
@@ -162,14 +162,14 @@ def test_web_only_settings_are_never_sent():
 def test_not_connected_shows_a_message_and_no_form():
     _c, _s, _svc, page = rig(connect=False)
     assert "Connect to a backend" in page.status_line.text()
-    assert not page.form.isVisible() and not page.footer.isVisible()
+    assert not page.form.isVisibleTo(page) and not page.footer.isVisibleTo(page)
 
 
 def test_loads_when_shown_active_and_builds_the_form():
     client, session, service, page = rig(connect=False)
     info = SessionInfo("p1", "W", "http://10.0.0.5:7866", "0.1.0", "backend-only", "i1", "b1", {})
     session.connected(info, "t")  # visible page + connected -> loads
-    assert page.original is not None and page.form.isVisible()
+    assert page.original is not None and page.form.isVisibleTo(page)
     edits = [e.text() for e in page.form.findChildren(QLineEdit)]
     assert r"D:\models\sdxl" in edits and r".\ckpts\z-image" in edits and r"D:\loras" in edits
     boxes = {b.text(): b.isChecked() for b in page.form.findChildren(QCheckBox)}
@@ -229,7 +229,7 @@ def test_failures_are_explained_and_a_disconnect_clears_the_form():
     page.reload_button.click()
     assert "backend is busy" in page.status_line.text()
     session.disconnected()
-    assert page.original is None and not page.form.isVisible()
+    assert page.original is None and not page.form.isVisibleTo(page)
     assert "Connect to a backend" in page.status_line.text()
 
 

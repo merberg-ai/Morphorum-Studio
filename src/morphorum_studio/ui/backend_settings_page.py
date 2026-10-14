@@ -64,6 +64,7 @@ class BackendSettingsPage(QWidget):
         self._checks: dict[str, PathCheck] = {}  # what the backend said about each folder
         self._rows: list[dict] = []
         self._requested = False
+        self._active = False
         self._build()
         service.loaded.connect(self._loaded)
         service.saved.connect(self._saved)
@@ -279,6 +280,7 @@ class BackendSettingsPage(QWidget):
     # ---- actions ------------------------------------------------------------------------
 
     def set_active(self, active: bool) -> None:
+        self._active = active
         if active and self._service.available and self.original is None and not self._service.busy:
             self.reload()
 
@@ -363,7 +365,7 @@ class BackendSettingsPage(QWidget):
         self._update()
 
     def _session_changed(self) -> None:
-        if self._service.available and self.original is None and self.isVisible() and not self._service.busy:
+        if self._service.available and self.original is None and self._active and not self._service.busy:
             self.reload()
         self._update()
 

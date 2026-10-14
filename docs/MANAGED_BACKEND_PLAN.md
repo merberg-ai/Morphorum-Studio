@@ -76,7 +76,7 @@ will be lost, and offers to open the folder first. Studio never deletes anything
 2. **C2 Installer (built, see C2_INSTALLER.md).** Preflight, consent, bootstrap driver with progress and cancel, resume and repair, auto-connect when done.
 3. **C3 Lifecycle polish (built, see C3_LIFECYCLE.md).** Auto-start with Studio, exit policy, crash recovery, port conflicts, LAN toggle with warning,
    status on header and Home.
-4. **C4 Maintenance.** Update check and guarded update (only while stopped), doctor report, remove with confirmation.
+4. **C4 Maintenance (built, awaiting test).** Update check and guarded update (only while stopped), health check, repair, branch switch, remove with typed confirmation. See `C4_MAINTENANCE.md`.
 5. **C5 First-run onboarding.** Home offers Simple or Advanced; hand-off to model setup once the API for it is confirmed.
 
 ## Testing

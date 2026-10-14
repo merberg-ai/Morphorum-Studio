@@ -16,6 +16,9 @@ from pathlib import Path
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -32,11 +35,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from morphorum_studio.backend import maintenance as mt
 from morphorum_studio.backend import managed
 from morphorum_studio.backend.credentials import CredentialStore
 from morphorum_studio.backend.session import BackendSession
 from morphorum_studio.ui import managed_backend as mb
 from morphorum_studio.ui import managed_install as mi
+from morphorum_studio.ui import managed_maintenance as mm
 from morphorum_studio.ui.connections_panel import COLUMN_WIDTH, ConnectionsPanel, _FitScroll
 
 STATE_CHIP = {
@@ -92,6 +97,8 @@ class ManagedPanel(QWidget):
                  installer: mi.InstallDriver | None = None,
                  confirm_close_install: Callable[[], bool] | None = None,
                  confirm_lan: Callable[[], bool] | None = None,
+                 maintenance: mm.MaintenanceDriver | None = None,
+                 confirm_remove: Callable[[str, list[str]], bool] | None = None,
                  lan_address: Callable[[int], str] = managed.lan_address,
                  parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -107,6 +114,9 @@ class ManagedPanel(QWidget):
         self._confirm_close_install = confirm_close_install or self._confirm_close_install_dialog
         self._confirm_lan = confirm_lan or self._confirm_lan_dialog
         self._lan_address = lan_address
+        self.maintenance = maintenance or mm.MaintenanceDriver()
+        self._confirm_remove = confirm_remove or self._confirm_remove_dialog
+        self.git_status: mt.GitStatus | None = None
         self._issuer: mb.CredentialIssuer | None = None
         self._connect_when_ready = False
         self._restart = False
@@ -126,6 +136,10 @@ class ManagedPanel(QWidget):
         self.installer.stage.connect(self._install_stage)
         self.installer.state_changed.connect(self._install_state)
         self.installer.finished.connect(self._install_finished)
+        self.maintenance.log_line.connect(self._append_log)
+        self.maintenance.busy_changed.connect(lambda _busy: self._update())
+        self.maintenance.checked.connect(self._checked)
+        self.maintenance.finished.connect(self._maintenance_finished)
         self.session.changed.connect(self._update)
         self.folder_edit.setText(self.settings.folder)
         for widget, apply in ((self.port, lambda: self.port.setValue(self.settings.port)),
@@ -318,6 +332,56 @@ class ManagedPanel(QWidget):
         self.log.setVisible(False)
         rbox.addWidget(self.log)
         layout.addWidget(run_card)
+
+        self.maint_card, mbox = self._card("Maintenance")
+        self.install_info = _label("", "connectionDetails")
+        mbox.addWidget(self.install_info)
+        self.maint_note = _label("", "hint")
+        mbox.addWidget(self.maint_note)
+        mbox.addWidget(_label(
+            "Updating, switching branch and repairing run Morphorum's own scripts. They refuse to run "
+            "over your local changes, keep a backup, and need the backend to be stopped.", "hint"))
+        mrow = QHBoxLayout()
+        mrow.setSpacing(10)
+        self.check_button = self._fixed(QPushButton("Check for updates"), 150)
+        self.check_button.clicked.connect(self.check_for_updates)
+        self.update_button = self._fixed(QPushButton("Update"), 90)
+        self.update_button.setObjectName("primaryAction")
+        self.update_button.clicked.connect(self.update_backend)
+        self.doctor_button = self._fixed(QPushButton("Health check"), 120)
+        self.doctor_button.clicked.connect(self.health_check)
+        self.repair_button = self._fixed(QPushButton("Repair"), 90)
+        self.repair_button.clicked.connect(self.repair)
+        self.cancel_maint_button = self._fixed(QPushButton("Cancel"), 90)
+        self.cancel_maint_button.setObjectName("dangerAction")
+        self.cancel_maint_button.clicked.connect(self.maintenance.cancel)
+        for button in (self.check_button, self.update_button, self.doctor_button, self.repair_button,
+                       self.cancel_maint_button):
+            mrow.addWidget(button)
+        mrow.addStretch(1)
+        mbox.addLayout(mrow)
+        brow = QHBoxLayout()
+        brow.setSpacing(10)
+        brow.addWidget(_label("Branch", "fieldLabel", wrap=False))
+        self.branch_box = QComboBox()
+        self.branch_box.setAccessibleName("Backend branch")
+        self.branch_box.setMinimumWidth(200)
+        brow.addWidget(self.branch_box)
+        self.switch_button = self._fixed(QPushButton("Switch branch"), 130)
+        self.switch_button.clicked.connect(self.switch_branch)
+        brow.addWidget(self.switch_button)
+        brow.addStretch(1)
+        mbox.addLayout(brow)
+        self.branch_note = _label("Run “Check for updates” to list the branches on GitHub.", "hint")
+        mbox.addWidget(self.branch_note)
+        rrow = QHBoxLayout()
+        rrow.addStretch(1)
+        self.remove_button = self._fixed(QPushButton("Remove Morphorum…"), 170)
+        self.remove_button.setObjectName("dangerAction")
+        self.remove_button.clicked.connect(self.remove_folder)
+        rrow.addWidget(self.remove_button)
+        mbox.addLayout(rrow)
+        layout.addWidget(self.maint_card)
 
     def _toggle_log(self, shown: bool) -> None:
         self.log.setVisible(shown)
@@ -600,6 +664,131 @@ class ManagedPanel(QWidget):
         self._connect_when_ready = again
         self._prepare_credential(then=self._backend_ready if again else self._update)
 
+    # ---- maintenance ----------------------------------------------------------------
+
+    def _maintenance_ok(self) -> bool:
+        """Scripts that change the folder run only with the backend stopped and nothing else running."""
+        return managed.check_folder(self.settings.folder).ok and not self.maintenance.busy \
+            and not self.installer.busy and self.backend.state in (mb.STOPPED, mb.CRASHED, mb.ERROR, mb.PORT_BUSY)
+
+    def check_for_updates(self) -> None:
+        if self.settings.folder and not self.maintenance.busy:
+            self.maint_note.setText("Checking GitHub…")
+            self.maintenance.check_for_updates(self.settings.folder)
+
+    def _checked(self, status: mt.GitStatus) -> None:
+        self.git_status = status
+        if status.error:
+            self.maint_note.setText(status.error)
+        elif status.behind:
+            self.maint_note.setText(f"{status.behind} update(s) available on branch {status.branch}.")
+        elif status.ahead:
+            self.maint_note.setText(f"Up to date with GitHub (this copy has {status.ahead} extra local commit(s)).")
+        else:
+            self.maint_note.setText(f"Up to date on branch {status.branch}.")
+        if status.dirty:
+            self.maint_note.setText(self.maint_note.text() + " Local changes in the folder will stop an update.")
+        self.branch_box.clear()
+        self.branch_box.addItems(list(status.branches))
+        if status.branch in status.branches:
+            self.branch_box.setCurrentText(status.branch)
+        self.branch_note.setText("Switching branch changes the backend's code; it is not for everyday use."
+                                 if status.branches else "No branches were listed.")
+        self._update()
+
+    def update_backend(self) -> None:
+        if self._maintenance_ok() and self.git_status is not None and self.git_status.update_available \
+                and not self.git_status.dirty:
+            self._run_maintenance(lambda: self.maintenance.update(self.settings.folder))
+
+    def switch_branch(self) -> None:
+        branch = self.branch_box.currentText()
+        status = self.git_status
+        if self._maintenance_ok() and branch and status is not None and branch != status.branch \
+                and not status.dirty:
+            self._run_maintenance(lambda: self.maintenance.update(self.settings.folder, branch))
+
+    def repair(self) -> None:
+        if self._maintenance_ok():
+            self._run_maintenance(lambda: self.maintenance.repair(self.settings.folder))
+
+    def health_check(self) -> None:
+        if self._maintenance_ok():
+            self._run_maintenance(lambda: self.maintenance.health_check(self.settings.folder))
+
+    def _run_maintenance(self, start: Callable[[], bool]) -> None:
+        self.log_toggle.setChecked(True)
+        self.maint_note.setText("Working… the output is shown under Backend output.")
+        if not start():
+            self.maint_note.setText("That could not be started.")
+
+    def _maintenance_finished(self, job: str, ok: bool, message: str) -> None:
+        if job == mm.REMOVE:
+            self._removed(ok, message)
+            return
+        if job == mm.CHECK:
+            return
+        self.maint_note.setText(message)
+        if job in (mm.UPDATE, mm.SWITCH, mm.REPAIR):
+            self.git_status = None  # what was true before no longer is
+            if ok:
+                self.check_for_updates()
+        self._update()
+
+    def _confirm_remove_dialog(self, name: str, personal: list[str]) -> bool:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Remove Morphorum")
+        layout = QVBoxLayout(dialog)
+        text = f"This permanently deletes the folder “{self.settings.folder}” and everything in it."
+        if personal:
+            text += "\n\nIt contains " + ", ".join(personal) + ". Those cannot be recovered."
+        text += "\n\nStudio will also forget its connection and credential for it. Type the folder name to confirm."
+        layout.addWidget(_label(text, "hint"))
+        edit = QLineEdit()
+        edit.setPlaceholderText(name)
+        layout.addWidget(edit)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+        remove = buttons.addButton("Remove permanently", QDialogButtonBox.ButtonRole.DestructiveRole)
+        remove.setEnabled(False)
+        edit.textChanged.connect(lambda value: remove.setEnabled(value.strip() == name))
+        buttons.rejected.connect(dialog.reject)
+        remove.clicked.connect(dialog.accept)
+        layout.addWidget(buttons)
+        return dialog.exec() == QDialog.DialogCode.Accepted
+
+    def remove_folder(self) -> None:
+        folder = self.settings.folder
+        if not folder or self.maintenance.busy or self.installer.busy or self.backend.state not in (
+                mb.STOPPED, mb.CRASHED, mb.ERROR, mb.PORT_BUSY, mb.UNCONFIGURED):
+            return
+        problems = mt.removal_problems(folder)
+        if problems:
+            self.maint_note.setText(" ".join(problems))
+            return
+        if not self._confirm_remove(Path(folder).name, mt.personal_contents(folder)):
+            return
+        self.log_toggle.setChecked(True)
+        self.maint_note.setText("Removing…")
+        if not self.maintenance.remove(folder):
+            self.maint_note.setText("The folder could not be removed.")
+
+    def _removed(self, ok: bool, message: str) -> None:
+        self.maint_note.setText(message)
+        if ok:
+            self._disconnect_if_managed()
+            kept = self.connections.remove_managed_profile()
+            self.settings.folder, self.settings.profile_id = "", ""
+            self.folder_edit.setText("")
+            self.git_status = None
+            self.branch_box.clear()
+            self.backend.configure("", self.settings.port, self.settings.lan)
+            self._persist()
+            self._show_folder_check()
+            if not kept:
+                self.maint_note.setText(message + " Studio could not forget the saved credential; "
+                                                  "remove it from Connections.")
+        self._update()
+
     # ---- opening Studio ---------------------------------------------------------------
 
     def startup_wanted(self, last_profile_id: str) -> bool:
@@ -713,6 +902,22 @@ class ManagedPanel(QWidget):
         self.port_button.setEnabled(state == mb.PORT_BUSY and not installing)
         self.lan.setEnabled(not owned and not installing)
         self.auto_restart.setEnabled(not installing)
+
+        self.maint_card.setVisible(ready or bool(self.settings.folder) and Path(self.settings.folder).is_dir())
+        self.install_info.setText(mt.describe_install(self.settings.folder) if ready else "")
+        idle = self._maintenance_ok()
+        status = self.git_status
+        self.check_button.setEnabled(ready and not self.maintenance.busy and not installing)
+        self.update_button.setEnabled(idle and status is not None and status.update_available and not status.dirty)
+        self.switch_button.setEnabled(idle and status is not None and not status.dirty and bool(
+            self.branch_box.currentText()) and self.branch_box.currentText() != status.branch)
+        self.doctor_button.setEnabled(idle)
+        self.repair_button.setEnabled(idle)
+        self.branch_box.setEnabled(idle and status is not None)
+        self.cancel_maint_button.setVisible(self.maintenance.busy and self.maintenance.job in (
+            mm.UPDATE, mm.SWITCH, mm.REPAIR))
+        self.remove_button.setEnabled(bool(self.settings.folder) and not self.maintenance.busy and not installing
+                                      and state in (mb.STOPPED, mb.CRASHED, mb.ERROR, mb.PORT_BUSY, mb.UNCONFIGURED))
 
     # ---- closing Studio -----------------------------------------------------------------
 

@@ -392,7 +392,7 @@ class FakeIssuer(QObject):
 
 
 class PanelRig:
-    def __init__(self, tmp_path, jobs=0, ask=None, installer=None, confirm_close=None, confirm_lan=None, **rig_kw):
+    def __init__(self, tmp_path, jobs=0, ask=None, installer=None, confirm_close=None, confirm_lan=None, panel_kw=None, **rig_kw):
         FakeIssuer.instances = []
         self.tmp = tmp_path
         self.holder = QWidget()
@@ -412,7 +412,8 @@ class PanelRig:
             ask_exit=ask or (lambda n: "stop"), choose_folder=lambda parent, start: str(self.folder),
             open_folder=lambda path: setattr(self, "opened", path), installer=installer,
             confirm_close_install=confirm_close, confirm_lan=confirm_lan or (lambda: True),
-            lan_address=lambda port: f"http://192.168.1.20:{port}", parent=self.holder)
+            lan_address=lambda port: f"http://192.168.1.20:{port}", parent=self.holder,
+            **(panel_kw or {}))
 
     def _connect(self):
         self.connected_calls += 1

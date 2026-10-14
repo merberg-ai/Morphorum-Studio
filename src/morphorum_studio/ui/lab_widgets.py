@@ -95,6 +95,7 @@ class LoraWeights(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self._names: list[str] = []
+        self._rows: list[QWidget] = []
         self._sliders: list[QSlider] = []
         self._values: list[QLabel] = []
         self._box = QVBoxLayout(self)
@@ -120,17 +121,17 @@ class LoraWeights(QWidget):
             label.setText(f"{weight:g}")
 
     def _rebuild(self, names: list[str]) -> None:
-        while self._box.count():
-            item = self._box.takeAt(0)
-            if item.layout() is not None:
-                while item.layout().count():
-                    child = item.layout().takeAt(0).widget()
-                    if child is not None:
-                        child.deleteLater()
+        for row in self._rows:
+            self._box.removeWidget(row)
+            row.setParent(None)
+            row.deleteLater()
+        self._rows = []
         self._names, self._sliders, self._values = list(names), [], []
         for index, name in enumerate(names):
-            row = QHBoxLayout()
-            row.setSpacing(8)
+            row = QWidget(self)
+            layout = QHBoxLayout(row)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(8)
             title = QLabel(name)
             title.setObjectName("fieldLabel")
             title.setMinimumWidth(90)
@@ -151,7 +152,9 @@ class LoraWeights(QWidget):
                 lambda v, i=index: self.weight_changed.emit(i, round(v * LORA_STEP, 2)))
             remove.clicked.connect(lambda _c=False, i=index: self.removed.emit(i))
             for widget in (title, slider, value, remove):
-                row.addWidget(widget, 1 if widget is slider else 0)
-            self._box.addLayout(row)
+                layout.addWidget(widget, 1 if widget is slider else 0)
+            self._box.addWidget(row)
+            row.show()
+            self._rows.append(row)
             self._sliders.append(slider)
             self._values.append(value)

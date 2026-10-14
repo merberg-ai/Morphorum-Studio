@@ -4,7 +4,7 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QDoubleSpinBox, QSpinBox
+from PySide6.QtWidgets import QApplication, QDoubleSpinBox, QSpinBox, QWidget
 
 from morphorum_studio.ui.lab_widgets import (
     LinkedSlider,
@@ -32,10 +32,12 @@ def test_remove_tag_tidies_spaces():
 
 
 def test_linked_slider_follows_spin_both_ways():
-    spin = QSpinBox()
+    host = QWidget()
+    spin = QSpinBox(host)
     spin.setRange(1, 100)
     spin.setValue(25)
     slider = LinkedSlider(spin)
+    slider.setParent(host)
     assert (slider.minimum(), slider.maximum(), slider.value()) == (1, 100, 25)
     slider.setValue(40)
     assert spin.value() == 40
@@ -47,10 +49,12 @@ def test_linked_slider_follows_spin_both_ways():
 
 
 def test_linked_slider_scaled_decimals():
-    spin = QDoubleSpinBox()
+    host = QWidget()
+    spin = QDoubleSpinBox(host)
     spin.setRange(0.0, 10.0)
     spin.setValue(6.0)
     slider = LinkedSlider(spin, scale=20)
+    slider.setParent(host)
     assert slider.value() == 120
     slider.setValue(130)
     assert spin.value() == 6.5
@@ -60,7 +64,9 @@ def test_linked_slider_scaled_decimals():
 
 
 def test_lora_rows_follow_tags_and_emit():
+    host = QWidget()
     rows = LoraWeights()
+    rows.setParent(host)
     got = []
     rows.weight_changed.connect(lambda i, w: got.append((i, w)))
     removed = []

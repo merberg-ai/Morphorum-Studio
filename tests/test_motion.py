@@ -58,7 +58,7 @@ class Fake:
         raise BackendError("NOT_FOUND", path)
 
     def get_json_etag(self, path, params=None):
-        return {"project": self.project}, '"' + "a" * 64 + '"'
+        return {"project": {**self.project, "id": path.rsplit("/", 1)[-1]}}, '"' + "a" * 64 + '"'
 
     def send_json(self, method, path, body=None, **kwargs):
         step = path.rsplit("/", 1)[-1]

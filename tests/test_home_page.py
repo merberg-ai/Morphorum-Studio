@@ -195,7 +195,7 @@ def test_no_control_claims_to_load_or_run_a_model():
     from PySide6.QtWidgets import QPushButton
 
     labels = {b.text().lower() for b in home.findChildren(QPushButton)}
-    assert labels == {"open connections", "refresh"}
+    assert labels == {"open connection settings", "refresh"}
     assert "image generation (s3)" in home.model_footer.text().lower()
 
 

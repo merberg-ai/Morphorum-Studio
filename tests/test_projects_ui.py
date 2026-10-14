@@ -452,7 +452,7 @@ def test_main_window_wiring(tmp_path):
         window.navigation.setCurrentRow(names.index("Home"))
         assert not window.projects_page._active
         window.projects_page.connect_button.click()
-        assert window.navigation.currentRow() == names.index("Connections")
+        assert window.navigation.currentRow() == names.index("Settings")
     finally:
         window.close()
 

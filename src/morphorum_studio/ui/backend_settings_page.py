@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPlainTextEdit,
     QPushButton,
     QSizePolicy,
     QVBoxLayout,
@@ -35,6 +36,7 @@ from morphorum_studio.ui.connections_panel import COLUMN_WIDTH, _FitScroll
 
 KIND_TITLE = {"checkpoints": "checkpoint folders", "loras": "LoRA folders"}
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
+MAX_CHECKS = 20
 
 
 def _label(text: str, name: str, wrap: bool = True) -> QLabel:
@@ -177,7 +179,7 @@ class BackendSettingsPage(QWidget):
                 box.addWidget(_label(f"{family.label} storage", "fieldLabel", wrap=False))
                 box.addLayout(self._path_row(
                     draft.managed.get(family.id, ""), self._storage_setter(family.id),
-                    check=False, remove=None, name=f"{family.label} storage folder"))
+                    name=f"{family.label} storage folder"))
         _card, box = self._card("Memory and performance")
         self._flag_boxes = {}
         for key, title, help_text in PERFORMANCE_FLAGS:
@@ -202,61 +204,63 @@ class BackendSettingsPage(QWidget):
             self._update()
 
     def _folder_card(self, family: str, title: str, kind: str, folders: list[str]) -> None:
-        _card, box = self._card(title[:1].upper() + title[1:])
-        holder = QWidget()
-        rows = QVBoxLayout(holder)
-        rows.setContentsMargins(0, 0, 0, 0)
-        rows.setSpacing(8)
-        box.addWidget(holder)
-
-        def fill() -> None:
-            while rows.count():
-                widget = rows.takeAt(0).widget()
-                if widget is not None:
-                    widget.setParent(None)
-                    widget.deleteLater()
-            if not folders:
-                rows.addWidget(_label("No folders yet.", "hint"))
-            for index in range(len(folders)):
-                rows.addWidget(self._folder_row(folders, index, fill))
-
-        add = _small(QPushButton("Add folder"), 110)
-        box.addWidget(add, 0, Qt.AlignmentFlag.AlignLeft)
-        self._rows.append({"family": family, "kind": kind, "add": add})
-        fill()
-
-    def _folder_row(self, folders: list[str], index: int, refill: Callable[[], None]) -> QWidget:
-        container = QWidget()
-        column = QVBoxLayout(container)
-        column.setContentsMargins(0, 0, 0, 0)
-        column.setSpacing(2)
+        _card, box = self._card(title[:1].upper() + title[1:],
+                                "One folder per line. Folders are on the backend's computer.")
+        edit = QPlainTextEdit()
+        edit.setPlainText("\n".join(folders))
+        edit.setPlaceholderText("No folders yet.")
+        edit.setMinimumHeight(84)
+        edit.setMaximumHeight(140)
+        edit.setToolTip(title)
+        box.addWidget(edit)
         message = _label("", "hint")
+        box.addWidget(message)
+        entry = {"folders": folders, "message": message, "edit": edit}
+        self._rows.append(entry)
 
-        def show_message() -> None:
-            found = self._checks.get(folders[index].strip())
-            message.setText(("OK: " if found.ok else "Problem: ") + found.message if found else "")
-            message.setVisible(bool(found))
-
-        def changed(text: str) -> None:
-            folders[index] = text
-            show_message()
+        def typed() -> None:
+            folders[:] = [line.strip() for line in edit.toPlainText().splitlines() if line.strip()]
+            self._show_messages(entry)
             self._update()
 
-        def remove() -> None:
-            del folders[index]
-            refill()
-            self._update()
+        edit.textChanged.connect(typed)
+        buttons = QHBoxLayout()
+        buttons.setSpacing(8)
+        if self._local():
+            browse = _small(QPushButton("Add folder…"), 120)
+            browse.clicked.connect(lambda: self._browse_into(entry))
+            buttons.addWidget(browse)
+        check = _small(QPushButton("Check folders"), 120)
+        check.clicked.connect(lambda: self._check_folders(entry))
+        buttons.addWidget(check)
+        buttons.addStretch(1)
+        box.addLayout(buttons)
+        self._show_messages(entry)
 
-        column.addLayout(self._path_row(folders[index], changed, check=False, remove=None,
-                                        name=f"Folder {index + 1}"))
-        return container
+    def _browse_into(self, entry: dict) -> None:
+        chosen = self._choose(self, entry["folders"][-1] if entry["folders"] else "")
+        if chosen and chosen not in entry["folders"]:
+            edit = entry["edit"]
+            edit.setPlainText("\n".join([*entry["folders"], chosen]))
 
-    def _path_row(self, value: str, on_change: Callable[[str], None], *, check: bool,
-                  remove: Callable[[], None] | None, name: str) -> QHBoxLayout:
+    def _check_folders(self, entry: dict) -> None:
+        for path in entry["folders"][:MAX_CHECKS]:
+            self._service.check(path)
+
+    def _show_messages(self, entry: dict) -> None:
+        lines = []
+        for path in entry["folders"]:
+            found = self._checks.get(path)
+            if found is not None:
+                lines.append(("OK: " if found.ok else "Problem: ") + f"{path} - {found.message}")
+        entry["message"].setText("\n".join(lines))
+        entry["message"].setVisible(bool(lines))
+
+    def _path_row(self, value: str, on_change: Callable[[str], None], *, name: str) -> QHBoxLayout:
         row = QHBoxLayout()
         row.setSpacing(8)
         edit = QLineEdit(value)
-        pass
+        edit.setToolTip(name)
         edit.setPlaceholderText("Folder on the backend's computer")
         edit.textEdited.connect(on_change)
         row.addWidget(edit, 1)
@@ -271,14 +275,6 @@ class BackendSettingsPage(QWidget):
 
             browse.clicked.connect(pick)
             row.addWidget(browse)
-        if check:
-            button = _small(QPushButton("Check"), 70)
-            button.clicked.connect(lambda: self._service.check(edit.text().strip()) if edit.text().strip() else None)
-            row.addWidget(button)
-        if remove is not None:
-            drop = _small(QPushButton("Remove"), 80)
-            drop.clicked.connect(remove)
-            row.addWidget(drop)
         return row
 
     # ---- actions ------------------------------------------------------------------------
@@ -345,11 +341,8 @@ class BackendSettingsPage(QWidget):
 
     def _checked(self, path: str, found: PathCheck) -> None:
         self._checks[path] = found
-        self._build_form_keep_draft()
-
-    def _build_form_keep_draft(self) -> None:
-        if self.draft is not None:
-            self._build_form()
+        for entry in self._rows:
+            self._show_messages(entry)
 
     def _scanned(self, total, warnings) -> None:
         text = f"Rescan finished: {total} model(s) found." if total is not None else "Rescan finished."

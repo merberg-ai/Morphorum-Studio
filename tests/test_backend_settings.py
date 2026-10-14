@@ -7,7 +7,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import copy
 
 import pytest
-from PySide6.QtWidgets import QApplication, QCheckBox, QLineEdit
+from PySide6.QtWidgets import QApplication, QCheckBox, QLabel, QLineEdit, QPlainTextEdit, QPushButton
 
 from morphorum_studio.backend.backend_settings import (
     SettingsApi,
@@ -173,11 +173,19 @@ def test_loads_when_shown_active_and_builds_the_form():
     client, session, service, page = rig(connect=False)
     info = SessionInfo("p1", "W", "http://10.0.0.5:7866", "0.1.0", "backend-only", "i1", "b1", {})
     session.connected(info, "t")  # visible page + connected -> loads
-    assert page.original is not None
+    assert page.original is not None and page.form.isVisibleTo(page)
+    assert [e.text() for e in page.form.findChildren(QLineEdit)] == [r".\ckpts\z-image"]
+    lists = [e.toPlainText() for e in page.form.findChildren(QPlainTextEdit)]
+    assert lists == [r"D:\models\sdxl", "", "", "", r"D:\loras"]
+    boxes = {b.text(): b.isChecked() for b in page.form.findChildren(QCheckBox)}
+    assert boxes == {"Unload after generation": False, "SDXL VAE tiling": True}
+    assert not page.save_button.isEnabled()
+    messages = " ".join(label.text() for label in page.form.findChildren(QLabel))
+    assert r"OK: D:\models\sdxl - Folder found." in messages
+    assert r"Problem: D:\loras - This folder does not exist yet." in messages
 
 
 
-@pytest.mark.skip(reason='bisect')
 def test_edit_save_sends_only_the_change_then_rescan():
     client, session, service, page = rig()
     box = next(b for b in page.form.findChildren(QCheckBox) if b.text() == "Unload after generation")
@@ -190,42 +198,39 @@ def test_edit_save_sends_only_the_change_then_rescan():
     assert client.scans == 1 and "12 model(s)" in page.status_line.text() and "No folder for flux." in page.status_line.text()
 
 
-@pytest.mark.skip(reason='bisect')
-def test_add_remove_and_revert_folders():
+def test_edit_folders_and_revert():
     client, session, service, page = rig()
-    add = page._rows[0]["add"]  # SDXL checkpoint folders
-    add.click()
-    blank = [e for e in page.form.findChildren(QLineEdit) if e.text() == ""][0]
-    blank.setText(r"E:\new")
-    blank.textEdited.emit(r"E:\new")
-    assert page.dirty and page.draft.paths["sdxl"]["checkpoints"][-1] == r"E:\new"
+    edit = page._rows[0]["edit"]  # SDXL checkpoint folders
+    edit.setPlainText(edit.toPlainText() + "\n  E:\\new  \n\n")
+    assert page.dirty and page.draft.paths["sdxl"]["checkpoints"] == [r"D:\models\sdxl", r"E:\new"]
+    page.save_button.click()
+    assert client.puts == [{"models": {"sdxl": {"checkpoints": [r"D:\models\sdxl", r"E:\new"]}}}]
+    page._rows[0]["edit"].setPlainText("")
+    assert page.dirty
     page.revert_button.click()
-    assert not page.dirty and r"E:\new" not in [e.text() for e in page.form.findChildren(QLineEdit)]
+    assert not page.dirty and page._rows[0]["edit"].toPlainText() == "D:\\models\\sdxl\nE:\\new"
 
 
-@pytest.mark.skip(reason='bisect')
 def test_check_asks_the_backend_and_shows_the_answer():
     client, session, service, page = rig()
-    from PySide6.QtWidgets import QPushButton
-    checkers = [b for b in page.form.findChildren(QPushButton) if b.text() == "Check"]
+    checkers = [b for b in page.form.findChildren(QPushButton) if b.text() == "Check folders"]
     checkers[0].click()
     assert client.checks == [r"D:\models\sdxl"]
+    assert "Folder found." in page._rows[0]["message"].text()
 
 
-@pytest.mark.skip(reason='bisect')
 def test_browse_only_for_a_backend_on_this_pc():
-    from PySide6.QtWidgets import QPushButton
     _c, _s, _svc, remote = rig(url="http://10.0.0.5:7866")
-    assert not [b for b in remote.form.findChildren(QPushButton) if b.text().startswith("Browse")]
+    assert not [b for b in remote.form.findChildren(QPushButton) if b.text().startswith(("Add folder", "Browse"))]
     _c, _s, _svc, local = rig(url="http://127.0.0.1:7866", chosen=r"F:\picked")
+    add = [b for b in local.form.findChildren(QPushButton) if b.text().startswith("Add folder")]
+    assert add
+    add[0].click()
+    assert local.draft.paths["sdxl"]["checkpoints"] == [r"D:\models\sdxl", r"F:\picked"] and local.dirty
     browse = [b for b in local.form.findChildren(QPushButton) if b.text().startswith("Browse")]
-    assert browse
-    browse[0].click()
-    assert r"F:\picked" in [e.text() for e in local.form.findChildren(QLineEdit)]
-    assert local.dirty
+    assert browse  # the managed storage row
 
 
-@pytest.mark.skip(reason='bisect')
 def test_failures_are_explained_and_a_disconnect_clears_the_form():
     client, session, service, page = rig()
     client.fail = "backend is busy"

@@ -7,7 +7,7 @@ own `GET /api/settings` response, so it never shows a control the backend cannot
 ## What is editable
 | Area | Backend keys | Notes |
 |---|---|---|
-| Model folders | `models.<family>.checkpoints`, `models.<family>.loras` | One card per family and kind the backend reports in `model_families` (SDXL, Flux checkpoints and LoRAs; Z-Image LoRAs). Add, edit, remove, **Check** (asks the backend), **Browse** (only when the backend is on this PC). |
+| Model folders | `models.<family>.checkpoints`, `models.<family>.loras` | One card per family and kind the backend reports in `model_families` (SDXL, Flux checkpoints and LoRAs; Z-Image LoRAs). One text box per folder list, one folder per line. **Check folders** asks the backend about each one; **Add folder…** opens a folder chooser (only when the backend is on this PC). |
 | Managed model storage | `managed_models.locations.<family>` | Z-Image today. Relative paths resolve inside the backend's install folder. |
 | Memory and performance | `performance.unload_after_generation`, `performance.sdxl_vae_tiling` | Two checkboxes with the web UI's wording. |
 
@@ -30,13 +30,15 @@ with a warning; the access token is never displayed.
 
 ## Windows checklist
 1. Connected to the managed backend: Settings > Backend settings shows SDXL, Flux and Z-Image cards matching the web UI.
-2. Add a models folder with **Browse**, **Check** it (OK: Folder found), **Save**, then **Rescan models**: Image Lab lists the models.
+2. Add a models folder with **Add folder…**, **Check folders** (OK: … Folder found), **Save**, then **Rescan models**: Image Lab lists the models.
 3. Type a folder that does not exist: Check says so; Save still works (the web UI allows it) and the card shows Problem:.
 4. Toggle both memory options, Save, open the web UI settings page: the same values appear. Revert discards unsaved edits.
 5. Connect to a remote backend: no Browse buttons; everything else works.
 6. Disconnect: the tab says to connect. Reconnect: Reload fills it.
 
-## Known gap
-Folder text boxes carry a tooltip but no accessible name: setting one on an editable `QLineEdit` crashed the Windows test
-process at exit (found by bisecting CI). The S6 accessibility step should label them another way (a visible label with a
-buddy).
+## Known gaps
+- Folder lists are plain text boxes (one folder per line). A per-row editor with Remove buttons crashed the Windows test
+  process at exit whenever more than one card with dynamic rows existed, and bisecting CI did not isolate why, so the page
+  uses the simpler widgets.
+- Text boxes carry a tooltip but no accessible name. The S6 accessibility step should label them with a visible label and
+  buddy.

@@ -271,12 +271,14 @@ def test_browse_only_for_a_backend_on_this_pc():
     _c, _s, _svc, remote = rig(url="http://10.0.0.5:7866")
     assert not [b for b in remote.form.findChildren(QPushButton) if b.text().startswith("Browse")]
     _c, _s, _svc, local = rig(url="http://127.0.0.1:7866", chosen=r"F:\picked")
-    add = [b for b in local.form.findChildren(QPushButton) if b.text().startswith("Add folder")]
+    add = [b for b in local.form.findChildren(QPushButton) if b.text() == "Add folder"]
     assert add
     add[0].click()
-    assert local.draft.paths["sdxl"]["checkpoints"] == [r"D:\models\sdxl", r"F:\picked"] and local.dirty
+    assert not local.dirty  # an empty extra row is only a UI draft
     browse = [b for b in local.form.findChildren(QPushButton) if b.text().startswith("Browse")]
-    assert browse  # the managed storage row
+    assert browse
+    browse[0].click()
+    assert local.draft.paths["sdxl"]["checkpoints"] == [r"D:\models\sdxl", r"F:\picked"] and local.dirty
 
 
 def test_failures_are_explained_and_a_disconnect_clears_the_form():

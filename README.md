@@ -1,109 +1,111 @@
 # Morphorum Studio
 
-**Native Windows-first desktop studio for controlling Morphorum AI image, animation and video generation on an existing GPU backend.** Linux compatible. Separate from the GPU/inference repository: https://github.com/merberg-ai/Morphorum.
+**Native desktop frontend for Morphorum AI image, animation, motion and video workflows.**
 
-> **Current development status (2026-10-13):** S1 secure connection manager and Pre-S2 native desktop polish are implemented on **dev-ui**. Authenticated LAN connection, reconnect, boot detection, OS keyring, session preferences, auto-connect, modern Qt controls and a branded splash exist. **S2.1 (live telemetry and model discovery) has NOT started.** Home, Projects, Image Lab, Editor, Motion Lab, Render Queue and Console still contain roadmap placeholders. Studio **main remains intentionally at S0** until the user explicitly approves a merge.
+Morphorum Studio is a Windows-first, Linux-compatible PySide6 application that controls a separate [Morphorum](https://github.com/merberg-ai/Morphorum) GPU backend. Studio is a client, not an inference package: it does not install CUDA, PyTorch or model weights into the desktop app.
 
-## Continue development in a new chat
+> **Development status, 2026-10-14:** active development lives on `dev-ui`. Studio `main` is intentionally still the original S0 scaffold and is not the branch to use for current development. S0 through the current S5 work, plus the managed-local-backend and backend-settings work, are integrated on `dev-ui`.
 
-**Read [docs/HANDOFF.md](docs/HANDOFF.md) first.** It is the authoritative current-state/recovery guide, with branch SHAs, physical acceptance notes, Windows commands, backend APIs, architectural invariants, open problems, and precise next steps. Then review [docs/ROADMAP.md](docs/ROADMAP.md) and [docs/PRE_S2_UI_POLISH.md](docs/PRE_S2_UI_POLISH.md).
+## Current capabilities
 
+The current `dev-ui` branch includes:
 
+- authenticated backend connections with named profiles, OS keyring credentials, trusted-LAN HTTP consent, reconnect and backend identity/boot tracking;
+- live dashboard telemetry and model discovery;
+- project browsing, creation and revision-safe editing with ETag conflict handling;
+- project source-image and soundtrack asset handling with verified downloads;
+- Image Lab still-image generation with durable idempotent submissions and result viewing;
+- animation rendering, recovery and frame browsing;
+- video export/download/playback, including soundtrack-aware MP4/WebM workflows;
+- backend Console;
+- native Timeline/editor, keyframes, validation, Deforum settings import and project setup;
+- Motion Lab preset/curve layers and Audio Director;
+- a read-only project pipeline Graph;
+- a managed local Morphorum backend mode that can install, start, reconnect, maintain and onboard a local backend;
+- backend settings/model-path management and rescanning from Studio;
+- Windows/Linux CI, wheel clean-install checks and offscreen UI screenshot generation.
 
-For a fresh ChatGPT conversation, this is enough to resume without reconstructing the project history:
+### Current verification note
 
-> Continue development of Morphorum Studio from https://github.com/merberg-ai/Morphorum-Studio on branch **dev-ui**. First read docs/HANDOFF.md, docs/ROADMAP.md and docs/PRE_S2_UI_POLISH.md, inspect current source/CI and the Morphorum backend dev-backend contract. Preserve current tested behavior and checkpoints. Do not merge either main branch. Let's discuss or start the next S2.1 increment.
+Most earlier milestones were physically exercised on Windows. S5.2a Audio Director and S5.3 Graph were merged after CI but still need the dedicated physical Windows checks recorded in their milestone docs.
 
-Current working branch: [dev-ui](https://github.com/merberg-ai/Morphorum-Studio/tree/dev-ui).
-Inspected source implementation SHA: **f91b3e6cf05329c1816e0c68ff7358bd11c63d07** (subsequent documentation commits may advance dev-ui).
-At that implementation SHA, GitHub Actions **Windows and Ubuntu Python 3.12 passed**, including the clean wheel-installed splash image check. Never assume a branch head or CI state without verifying it again.
+## Get the current development build
 
-## What works today
+For a fresh clone, explicitly select `dev-ui`:
 
-- Native PySide6 app with nine sidebar workspaces and a graphite/cyan/violet theme.
-- Connections: named local profiles, bearer tokens stored in OS-protected keyring, locally imported token files, trusted-LAN HTTP authorization saved per profile + exact URL, authenticated API v1 discovery, instance-ID change prompt, boot-ID change detection.
-- Live connection health probing, bounded passive reconnect, distinguish unauthorized vs offline vs incompatible backend, manual Disconnect does not stop the GPU backend.
-- Settings: splash, restore window size/position/maximized state, last workspace, last selected profile, last successful backend, configurable automatic startup connection.
-- Branded startup splash with staged initialization bar. Optimized logo is included in the Python package, not dependent on a manual file copy. A Windows report revealed a malformed JPEG warning, repaired by re-encoding the asset. CI now checks that Qt decodes the image without warnings; final human Windows warning-free retest is not separately documented.
-- Source checkouts and fast-forward-only update/launch scripts for Windows and Linux, mock/offscreen tests, packaged wheel clean-install CI.
-
-**Not yet implemented:** CPU/GPU telemetry dashboard, model discovery/selectors, project browser and save controls, GPU image/animation/video generation from Studio, live job render queue, SSE events, native animation editor, Motion Lab/audio editor, distributable installer. These belong to S2–S7, not broken P1–P4 implementations.
-
-## Windows quickstart (working development branch)
-
-Install **Python 3.12** and Git first. PowerShell:
-
-~~~powershell
+```powershell
 git clone --branch dev-ui https://github.com/merberg-ai/Morphorum-Studio.git
 cd Morphorum-Studio
 .\setup.ps1
 .\run.ps1
-~~~
+```
 
-To update an existing checkout without changing its branch:
+Linux:
 
-~~~powershell
+```bash
+git clone --branch dev-ui https://github.com/merberg-ai/Morphorum-Studio.git
+cd Morphorum-Studio
+./setup.sh
+./run.sh
+```
+
+For an existing checkout:
+
+```powershell
 git status --short --branch
 git switch dev-ui
 .\update.ps1
 .\run.ps1
-~~~
+```
 
-The updater refuses dirty branches or unsafe ref updates; don't use git reset --hard to dodge those safeguards. Backend runs **separately**.
+The updater is intentionally fast-forward-only. If Git reports local changes, inspect them rather than force-resetting them into the void where regrettable decisions go to breed.
 
-### Linux
+## Backend relationship
 
-~~~bash
-git clone --branch dev-ui https://github.com/merberg-ai/Morphorum-Studio.git
-cd Morphorum-Studio
-bash setup.sh
-bash run.sh
-~~~
+The backend is a separate repository: [merberg-ai/Morphorum](https://github.com/merberg-ai/Morphorum).
 
-### Tests
+The former long-running backend `dev-backend` work was merged into backend `main` on 2026-10-14. Studio should now treat Morphorum `main` plus the live authenticated capability response as the source of truth. Historical Studio docs may mention the old `dev-backend` baseline as milestone evidence.
 
-~~~powershell
+Studio discovers backend support at runtime through API contract version 1 and advertised feature flags. It must not assume that a visible Studio control is supported merely because an older backend once supported it.
+
+Plain HTTP should be used only on a trusted private LAN or inside a trusted tunnel/VPN. Credentials belong in the OS keyring, not source files, settings JSON, URLs or logs.
+
+## Repository state
+
+- **`dev-ui`**: current integrated development branch.
+- **`main`**: intentionally preserved S0 scaffold until explicitly approved for integration.
+- **`checkpoint/*`**: immutable historical verification points; do not rewrite or delete them casually.
+- **`ui-screenshots`**: generated screenshot branch used by CI; it intentionally has unrelated history.
+
+Merged feature branches are disposable once their ancestry is verified to be fully contained in `dev-ui`.
+
+## Documentation
+
+Start here when resuming development:
+
+- [docs/HANDOFF.md](docs/HANDOFF.md): current branch/state, verification status, immediate resume point and non-negotiable rules.
+- [docs/ROADMAP.md](docs/ROADMAP.md): current S0-S7 phase status and remaining work.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): client/backend boundary, session model, safety and data integrity rules.
+- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md): install, testing, branch and acceptance workflow.
+- `docs/S*.md`, `docs/LAYOUT_*.md`, `docs/C*.md`, `docs/BS*.md`: milestone implementation records and physical test checklists.
+
+## Development tests
+
+Windows:
+
+```powershell
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe scripts\verify_clean_install.py
-~~~
+```
 
-For headless tests set QT_QPA_PLATFORM=offscreen. CI workflow: [.github/workflows/ci.yml](.github/workflows/ci.yml), Windows + Ubuntu Python 3.12. Python package is version 0.1.0a1.
+Linux:
 
-## GPU backend and credential setup
+```bash
+./.venv/bin/python -m pytest -q
+./.venv/bin/python scripts/verify_clean_install.py
+```
 
-Morphorum Studio is a remote or local **client**. No PyTorch/CUDA, model downloads or shared backend installation directory are required on the Studio machine. To make the backend available on a trusted LAN, start the backend from its **separate repository**, typically:
-
-~~~powershell
-cd D:\Morphorum-test
-.\run.bat --backend-only --lan
-~~~
-
-Usually uses TCP 7866; configure your real host URL in Studio Connections. Do not hardcode the example address into the app.
-
-A revocable dedicated client token must be issued on the backend **host** and imported into Studio Connections (not posted to ChatGPT, GitHub, a URL or an application log):
-
-~~~powershell
-.\.venv\Scripts\python.exe -m morphorum clients issue "Morphorum Studio" --days 90 --out ".\data\studio-client.token"
-~~~
-
-See [docs/S1_FOUNDATION.md](docs/S1_FOUNDATION.md) for import and revocation procedure. Plain HTTP is unencrypted: use only a trusted private LAN or tunnel, otherwise use TLS/VPN.
-
-## Important repository boundaries
-
-- Studio **main** remains S0 by design. Continue on **dev-ui** until instructed differently; merging either repo to main requires explicit user approval.
-- Morphorum backend **dev-backend** is pinned to **2046d36ff6e084d801a14e2024d14665c207d884** at this handoff. Backend [draft PR #32](https://github.com/merberg-ai/Morphorum/pull/32) remains open/unmerged against backend main. Do not merge it without explicit approval.
-- Previously created immutable checkpoint refs record milestone evidence. The older Pre-S2 CI checkpoint was taken **before** the malformed JPEG correction. For a current implementation start from **dev-ui**, not an earlier checkpoint.
-- Never mix backend inference or Web UI code into this repository. The backend API contract version is **1** and is discovered via /api/client/capabilities.
-
-## Documentation index
-
-- [HANDOFF.md](docs/HANDOFF.md): **new-chat starting point**, live implementation status, exact next steps and safety guardrails.
-- [ROADMAP.md](docs/ROADMAP.md): S0–S7 feature delivery and testing plan.
-- [PRE_S2_UI_POLISH.md](docs/PRE_S2_UI_POLISH.md): P1–P4 milestones, user feedback, logo re-encode history and CI evidence.
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md): client/backend separation, security, project revision and GPU job recovery rules.
-- [DEVELOPMENT.md](docs/DEVELOPMENT.md): developer install, test and branch discipline.
-- [S1_FOUNDATION.md](docs/S1_FOUNDATION.md): connection transport, credentials and LAN onboarding.
-- [Backend Studio contract](https://github.com/merberg-ai/Morphorum/blob/dev-backend/docs/STUDIO_CLIENT_HANDOFF.md): API endpoints and backend-side constraints.
+CI runs on Windows and Ubuntu with Qt in offscreen mode.
 
 ## License
 

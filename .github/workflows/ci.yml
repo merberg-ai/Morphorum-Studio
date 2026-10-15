@@ -64,7 +64,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
       - name: Publish screenshots to the ui-screenshots branch
-        if: matrix.os == 'ubuntu-latest' && github.event_name == 'push' && startsWith(github.ref_name, 'feature/')
+        if: matrix.os == 'ubuntu-latest' && github.event_name == 'push' && (startsWith(github.ref_name, 'feature/') || github.ref_name == 'dev-ui')
         continue-on-error: true
         run: |
           set -e

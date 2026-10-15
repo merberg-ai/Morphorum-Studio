@@ -1,178 +1,215 @@
 # Morphorum Studio development roadmap
 
-**Current state (2026-10-13):** S0 Windows-verified; S1 connection manager and pre-S2 polish implemented on **Studio dev-ui** and physically tested in increments. **S2.1 is next and NOT started.** Latest checked source SHA `f91b3e6` passed Windows + Ubuntu CI after JPEG re-encode. Studio `main` remains intentionally S0, backend `main` remains intentionally unmerged. See [HANDOFF.md](HANDOFF.md) for detailed live state, acceptance limitations, branch policy and immediate tasks.
+**Current state, 2026-10-14:** current integrated source is `dev-ui`. S0 through S5.3 are implemented to varying verification levels, and the managed-local-backend work (C1-C5 plus BS1/BS2) is integrated. Studio `main` intentionally remains the old S0 scaffold until the user explicitly approves changing it.
 
-This is the canonical implementation/acceptance plan for future sessions. Treat each phase as incremental, with CI and **physical Windows testing before declaring it verified**. Use dedicated feature branches; preserve physical-acceptance checkpoint refs.
+This file is the current phase map. Detailed implementation notes and Windows test checklists live in the milestone documents beside it.
 
-## S0. Bootstrap, design system and smoke tests (initial scaffold implemented)
+## Status summary
 
-Deliverables:
+| Phase | Status | Notes |
+|---|---|---|
+| S0 Bootstrap | Complete / Windows verified | Native PySide6 shell, packaging, CI, initial checkpoints. |
+| S1 Connections | Complete / Windows verified | Authenticated profiles, keyring, reconnect, identity/boot handling, preferences and splash. |
+| S2 Projects/data | Complete / Windows verified | Telemetry/models, project CRUD, revision-safe saves, media assets. |
+| S3 Generation/rendering | Complete / Windows verified | Still generation, animation jobs/recovery, export/download/playback. |
+| S4 Editor/workflow | Complete / Windows verified in merged workflow | Timeline, keyframes, validation/import, project setup, UI/layout passes. |
+| S5 Motion/Audio/Graph | Implemented | S5.1 physically tested. S5.2a Audio Director and S5.3 Graph passed CI but still need their dedicated Windows checks. S5.2b is not started. |
+| Managed backend C1-C5 | Complete / Windows tested | Simple local backend lifecycle, install/startup/maintenance/onboarding. |
+| Backend settings BS1/BS2 | Complete / Windows tested | Backend path/settings editing, checks and model rescanning. |
+| S6 Resilience/polish | Not started as a dedicated phase | Some groundwork exists, but the formal pass remains. |
+| S7 Packaging/release | Not started | Installer/portable/release-candidate work remains. |
 
-- [x] Standalone `merberg-ai/Morphorum-Studio` repo with existing Unlicense.
-- [x] Python 3.12 PySide6 packaging, `python -m morphorum_studio` launch.
-- [x] Dark graphite UI shell: sidebar, nine navigable native workspaces, explicit offline status.
-- [x] No inference/GPU/model requirements and no backend code vendoring.
-- [x] Basic Qt offscreen and version CLI tests, dual-platform CI workflow.
-- [x] Roadmap, architecture, developer workflow and new-chat handoff.
-- [x] **Verify initial CI green** on Studio `main`: GitHub Actions run 38316458956 passed on Windows Python 3.12 and Ubuntu Python 3.12 at `af77b402edb7e06ec8297db3961f6535e21e5afc`.
-- [x] **Physical Windows launch (user PASS, 2026-10-12):** window opens, layout/scaling good, sidebar navigation works, no network or backend startup, close exits cleanly.
-- [x] User accepts UI shell; S0 verified checkpoint branch `checkpoint/studio-s0-windows-verified-20261012` from `fb5024e7592a6d271a8eeb214fc2470387d2e363`.
+## Immediate resume point
 
-**Exit criterion:** CI green and user-confirmed normal Windows GUI behavior. No remote features claimed.
+Before adding major new features:
 
-## S1. Backend connections, security and native service layer
+1. Run the physical Windows acceptance checks for [S5_2A_AUDIO_DIRECTOR.md](S5_2A_AUDIO_DIRECTOR.md) and [S5_3_GRAPH.md](S5_3_GRAPH.md), especially real MP3/FLAC/OGG loading, Audition playback, Graph keyboard selection and the 880x560 layout.
+2. Fix any discovered issues on a fresh feature branch from current `dev-ui`.
+3. Reconfirm backend capability behavior against current Morphorum `main`; the old backend `dev-backend` branch is no longer the active source of truth.
+4. Then continue with S6 resilience/accessibility work or the still-deferred S5.2b work, depending on priority.
 
-**S1.1 HTTP transport foundation (implemented, CI + live LAN exercised)**
-- [x] Typed `BackendClient` and `BackendError` with bounded timeouts, explicit status handling, URL normalization, redirect rejection and stable error codes.
-- [x] Authenticated `GET /api/health` and `GET /api/client/capabilities`; strictly require contract version 1 and validate modes/features.
-- [x] Mock/fake-HTTP tests covering 401, 403, 409, 412, unknown API, redirects, timeouts, malformed JSON.
-- [x] Discovery requests execute via Qt QRunnable workers off GUI thread; epoch invalidation discards late results after disconnect. Actual low-level network cancellation is not yet implemented.
+The user's current request after repository housekeeping is to fix app issues, so actual reported defects take priority over speculative roadmap expansion.
 
-**S1.2 Connection Manager UX (implemented on dev-ui)**
-- [x] Initial Windows/Linux setup, fast-forward-only update, and native launch scripts delivered with S1.1; test on physical Windows before acceptance.
-- [x] Named connection profiles: label, URL, pinned `instance_id`, last `boot_id`, preferred transport. Persist profiles **without secrets**.
-- [x] OS Credential Manager/secure keyring for per-client bearer tokens. Support interactive token entry or trusted local provisioning; avoid embedding a real token in test fixtures.
-- [x] UI connection panel: add/edit/test/remove, connection status, capabilities/version, local/remote context, troubleshoot.
-- [x] Explicit warning before transmitting secrets over plaintext HTTP on untrusted networks. Do not implement speculative network pairing; backend provides local-host admin `clients issue/list/revoke`.
-- [x] Correct handling of revoked tokens and backend instance mismatch. Reconnect after process restart and refresh capability flags.
-- [x] Never kill a remote backend when closing Studio. A user-started local backend is also not owned by Studio.
+## S0: bootstrap and native shell
 
-**S1 and pre-S2 acceptance evidence**
+Delivered:
 
-- [x] User physically connected authenticated Studio over trusted LAN with host-issued revocable token.
-- [x] User physically exercised backend stop/restart, boot change, automatic reconnect, manual disconnect and status changes.
-- [x] User physically reported disposable token revocation produces BACKEND UNAUTHORIZED and stops retrying; separate mocked wrong-token/403 cases are in tests.
-- [x] Identity mismatch **rejection** in automated Qt tests preserves previously pinned host; **not physically tested against a second real backend**.
-- [x] OS keyring stores secrets; persisted profile JSON and QSettings hold only nonsecret data. This is an implementation property and tested behavior, not a formal penetration audit.
-- [x] Windows/Ubuntu CI on S1 increment; S1 reconnect checkpoint recorded. P1 theme, P2 settings/geometry/last profile, P3 splash, early P4 auto-connect/HTTP consent accepted by user on Windows.
-- [x] Optimized branded logo included in wheel; fresh-wheel install and warning-free Qt JPEG decoder checks passed on Windows/Ubuntu CI at f91b3e6.
-- [ ] Last manual Windows recheck of **corrected** JPEG (no terminal warning) has not been explicitly documented; user stated current state is sufficient and paused.
-- [ ] Higher-DPI/multimonitor/slow backend startup tests and physical second-instance mismatch approval remain optional/future hardening. No claim of full comprehensive security acceptance.
-- [ ] No main merge or replacement of earlier immutable checkpoint without explicit user approval.
+- standalone public Studio repository and Unlicense;
+- Python 3.12+ / PySide6 native application;
+- desktop navigation shell and dark visual system;
+- Windows/Linux CI and basic offscreen tests;
+- development/architecture/handoff documentation;
+- physical Windows launch verification.
 
-**Pre-S2 details:** [PRE_S2_UI_POLISH.md](PRE_S2_UI_POLISH.md). An older pre-S2 checkpoint (`aa7e798`) **predates** the JPEG re-encode; current source is dev-ui. P1–P4 application functionality is in place; do not restart it from S0.
+Historical checkpoint refs remain intentionally immutable.
 
-## S2. Models, projects and media assets
+## S1: connection and client-service foundation
 
-**S2.1 Model discovery and dashboard (IMPLEMENTED on feature/studio-s2-1-dashboard; awaiting CI + physical Windows test, see [S2_1_DASHBOARD.md](S2_1_DASHBOARD.md))**
+Delivered:
 
-Incremental implementation order (stop for user review before GPU operations):
-- [ ] Confirm dev-ui head/CI and live dev-backend API schema/feature flags; agree on branch from current dev-ui. S2 must not be written to Studio main automatically.
-- [ ] Extract a reusable authenticated connection/session read facade for pages besides Connections; preserve existing manual disconnect, automatic reconnect, HTTP consent, keyring, instance/boot-ID behavior. Avoid a second independent connection poller.
-- [ ] Add **typed, read-only** backend API for GET /api/system/telemetry and /api/system/gpu-memory with bounded timeouts. Respect exact response schema, missing fields, real GPU/VRAM units and hardware identification; never fabricate values.
-- [ ] Add GET /api/models/families and GET /api/models?family=... endpoints; extend safe query handling of BackendClient, which currently rejects query strings. Use supported backend dynamic defaults and family flags. Do not scan client filesystem for models.
-- [ ] Offload telemetry/model requests to background Qt workers. Bounded refresh interval and transient error handling must not stall GUI; stop or rebind polling on disconnect, profile change and different instance/boot.
-- [ ] Replace Home placeholder with real connected/offline dashboard cards (CPU, GPU, RAM, VRAM, backend version/mode, useful model inventory). Provide accessible unavailable/unknown states. No cosmetic zeroes or fake bars.
-- [ ] Add native model inventory and family selector when API data is available; changing families should reflect backend-validated sampler/CFG/resolution defaults. Do **not** expose a button that claims to load/run a model until a real supported endpoint exists.
-- [ ] Mock authenticated success/failures, missing GPU, malformed data, auth rejection, invalid query, reconnect and stale worker completions. Both Windows/Ubuntu CI must pass exact SHA.
-- [ ] Stop for **user physical Windows test** with backend online/offline and at least one installed model from each applicable family. Only then checkpoint/merge with explicit approval.
+- typed HTTP transport and error handling;
+- API contract/capability discovery;
+- named profiles and OS keyring secrets;
+- trusted-LAN HTTP consent;
+- backend identity/boot tracking;
+- reconnect and manual disconnect behavior;
+- Qt worker-based network operations;
+- preferences, splash and startup connection behavior.
 
-**S2.1 exit:** Live metrics and model metadata are real, useful and resilient, with no local GPU dependencies. Console stream and more advanced diagnostic UI may wait for S3 where appropriate.
+The native client must never add browser `Origin` behavior, follow credentialed redirects blindly or stop a remote backend when Studio exits.
 
-**S2.2 Project Browser / revision-safe editing (IMPLEMENTED on feature/studio-s2-2-projects; awaiting CI + physical Windows test, see [S2_2_PROJECTS.md](S2_2_PROJECTS.md))**
-- List/search/create/open/trash project, project metadata, recent renders.
-- GET full normalized project with strong ETag; edits use conditional `PUT If-Match`.
-- Explicit 412 conflict UI: reload/compare/cancel, never silent overwrite.
-- New Project Wizard based on backend's project template; address known historical invalid 3D camera settings through validated defaults and tests rather than copying bad values.
-- Unsaved-change prompts, session restore and recent-project history.
+## S2: models, projects and assets
 
-**S2.3 Project-owned assets (PARTLY IMPLEMENTED on feature/studio-s2-3-assets: source image + soundtrack; awaiting CI + physical Windows test, see [S2_3_ASSETS.md](S2_3_ASSETS.md))**
-- Upload selected local PNG source image, import soundtrack WAV/MP3/OGG/FLAC and analyze Motion Lab WAV using real API limits.
-- Download/list assets and validate sizes/SHA-256; atomic `.part` replacement and private local cache.
-- Distinguish server-relative asset URL from local path; no shared path assumptions.
+Delivered:
 
-**S2 physical acceptance**
-- [ ] Real models and GPU state displayed; backend-only reachable without old browser UI.
-- [ ] Create/rename/save/reload a disposable project, including ETag 412 conflict after parallel edit.
-- [ ] Upload and retrieve source PNG, soundtrack and analyzed WAV with matching SHA-256.
-- [ ] New-project default camera schedules validated and safe on the test project.
-- [ ] Tests/CI and Windows GUI acceptance; S2 verified checkpoint.
+- live hardware/backend telemetry;
+- model-family/model discovery;
+- project list/create/open/trash/edit flows;
+- strong ETag/`If-Match` saves and visible 412 conflict handling;
+- source image and soundtrack assets;
+- verified download/copy behavior;
+- project setup/wizard integration.
 
-## S3. Image generation, animations, job monitoring, downloads
+## S3: generation and render lifecycle
 
-**S3.1 Single-image and queue (IMPLEMENTED on feature/studio-s3-1-image-lab, except img2img; awaiting CI + physical Windows test, see [S3_1_IMAGE_LAB.md](S3_1_IMAGE_LAB.md))**
-- Prompt/negative prompt, model, LoRAs, seeds, batch, resolution/steps/CFG/sampler with model-valid defaults.
-- Persist *exact* body and generated idempotency key **before** each POST; don't duplicate GPU jobs on lost response.
-- Live job progress: queue, model load, per-step, ETA when available, results/preview/gallery and cancel where supported.
-- Native result image viewer, zoom and safe save; backend does the generation.
+Delivered:
 
-**S3.2 Animation and job recovery (IMPLEMENTED on feature/studio-s3-2-animation; SSE deliberately not used, see [S3_2_ANIMATION.md](S3_2_ANIMATION.md); CI green + physical Windows test passed)**
-- Submit **full saved project** in `POST /api/animation/renders`, never just project ID.
-- Typed SSE `/api/client/jobs/{kind}/{job_id}/events` with authoritative GET polling fallback.
-- Correct boot ID resets, console gaps, queued/running/failed/cancelled/interrupted/resumable distinctions, and explicit resume confirmation.
-- Durable render session reattachment after Studio exit, LAN outage and backend restart; recover *all* completed frame records.
-- Show running frame strip, selected frame, latest completed PNG, progress bars and render performance details.
+- still-image generation;
+- durable idempotency records before GPU submission;
+- render queue/progress and still result viewer;
+- animation render submission/recovery;
+- completed-frame browsing;
+- export requests;
+- verified MP4/WebM/GIF/image downloads and playback.
 
-**S3.3 Video/audio exports (IMPLEMENTED on feature/studio-s3-3-video, see [S3_3_VIDEO.md](S3_3_VIDEO.md); CI green + physical Windows test passed)**
-- Discover host FFmpeg availability; MP4/WebM with audio; track encoding and return completed URLs.
-- SHA-256-verified/atomic downloads of PNG/GIF/MP4/WebM. Play animation/video with correct media controls and audio.
-- Explicit warning if frozen soundtrack missing; do not claim audio present without evidence.
+Core invariant: uncertain GPU submission state is reconciled, not resubmitted with a new idempotency key.
 
-**S3 physical acceptance**
-- [ ] Remote GPU SDXL still job complete and saved locally.
-- [ ] Remote short animation completes, showing progress/frames/ETA and its GIF.
-- [ ] Kill/disconnect Studio client mid-render; reopen and recover same job without duplicate.
-- [ ] Backend process restart: completed jobs recover, interrupted jobs not incorrectly shown running.
-- [ ] Verified MP4/WebM download with actual audio track; no corrupt overwrite.
-- [ ] CI and Windows physical acceptance; S3 verified checkpoint.
+## S4: native editing workflow
 
-## S4. Native animation editor and authoring workflow
+Delivered:
 
-*Checkpoints: S4.1 timeline viewer (IMPLEMENTED on feature/studio-s4-1-timeline, see [S4_1_TIMELINE.md](S4_1_TIMELINE.md)); S4.2 keyframe editing (IMPLEMENTED on feature/studio-s4-2-keyframes, see [S4_2_KEYFRAMES.md](S4_2_KEYFRAMES.md)); S4.3 validation/import (IMPLEMENTED on feature/studio-s4-3-import-validation, see [S4_3_IMPORT_VALIDATION.md](S4_3_IMPORT_VALIDATION.md); motion-import/presets move to S5); S4.4 project wizard, start mode (img2img) and model/LoRA browser (IMPLEMENTED on feature/studio-s4-4-project-setup, see [S4_4_PROJECT_SETUP.md](S4_4_PROJECT_SETUP.md); layouts/shortcuts/help tooltips done in the UI pass, see [UI_PASS.md](UI_PASS.md)).*
+- timeline visualization;
+- prompt/generation/camera schedules;
+- keyframe editing and undo behavior;
+- validation;
+- Deforum Motion Studio settings import;
+- project setup and model/LoRA selection;
+- desktop layout and usability passes;
+- queue/library/timeline/lab shell refinements.
 
-- Native timeline of prompt, negative-prompt, generation, 2D motion, six-axis 3D camera, cadence and seed schedules.
-- Flexible keyframes, easing/interpolation and preview scrubbing. Backend normalization owns schedule interpretation.
-- Presets and Deforum Motion Studio settings import with correct axis/strength translation, user-visible range units and reliable UI feedback.
-- Source-image start / image-to-image controls, model & LoRA manager, project wizard for guided setup.
-- Save/restore layouts, keyboard shortcuts, validation, undo/redo design, useful help popovers and tooltips.
-- New Project Wizard must never seed 3D camera values that project behind the camera: add validation/error review before generation.
-- Physical tests covering imported motion values, native timelines, nontrivial keyframes, 2D and 3D render parity, project load/edit/save round trips.
+Milestone records: `S4_*.md`, `UI_PASS.md`, `LAYOUT_*.md`.
 
-**Exit:** S4 editor generates the same project semantics as the accepted backend Web UI and handles schema conflicts safely.
+## S5: Motion Lab, Audio Director and Graph
 
-## S5. Native Motion Lab and Audio Director
+### S5.1 Motion Lab
 
-- Six-axis motion layer composer, preset curves, configurable interpolation/smoothing, layered effects, deterministic frame-aligned recording.
-- Keyboard/touch/gamepad input where appropriate for desktop. Live motion recording does not fight text field shortcuts.
-- Audio-driven camera effects: frequency-band filters, envelope/beat analysis, amplitude, trigger thresholds, offset/sync, audio-duration matching.
-- Song waveform/scrub controls; segment-accurate prompts, per-frame seed and keyframe visualizations, careful preview cache.
-- Audio soundtrack must remain attached to final MP4/WebM; imported soundtrack snapshot and Motion Lab WAV ownership handled distinctly.
-- GUI never assumes all features in the Web UI map to implemented API endpoints. If a control lacks a backend API, specify and test a **separate backend feature proposal** before exposing it.
-- Physical check of layered motion previews and output reproducibility, no missing soundtrack, deterministic timeline, stable saved project.
+Implemented and physically tested:
 
-**Exit:** Core Motion Lab effects tested on physical Windows backend and consistent after reopen.
+- motion layers;
+- presets/curves;
+- preview/apply flows;
+- conflict handling.
 
-*Checkpoints: S5.1 Motion tab (see [S5_1_MOTION_LAB.md](S5_1_MOTION_LAB.md)); S5.2a Audio Director (see [S5_2A_AUDIO_DIRECTOR.md](S5_2A_AUDIO_DIRECTOR.md)); S5.3 read-only pipeline Graph (IMPLEMENTED on feature/studio-s5-3-graph, see [S5_3_GRAPH.md](S5_3_GRAPH.md)). S5.2b waits on the backend proposals in [BACKEND_PROPOSALS.md](BACKEND_PROPOSALS.md).*
+### S5.2a Audio Director
 
-## S6. Desktop usability, polish and performance
+Implemented and CI-tested:
 
-- Windows desktop layout: resizable docks/panels, multi-monitor/high-DPI, keyboard navigation, tooltips, error dialogs, autosave prompts.
-- Native thumbnail cache, lazy frame loading, bounded disk/memory, no UI stalls with thousands of frames.
-- Settings and diagnostics for backend logs/network/API compatibility; accessible contrast and screen reader labels.
-- User-selectable themes/fonts, refined dark glass visuals and Morphorum branding/logo assets approved by the user.
-- Graceful shutdown without cancelling server jobs, fail-safe active tasks and session recovery.
-- Robust regression tests for network loss, corrupt downloads, stale project ETags and long render manifests.
+- WAV plus local Qt decoding path for MP3/FLAC/OGG/M4A;
+- fixed backend band analysis;
+- level/transient driven layers;
+- threshold/attack/return/gap/offset/range controls;
+- envelope view and audition;
+- soundtrack distinction/warnings.
 
-## S7. Packaging, updater, documentation and release candidate
+Still requires dedicated physical Windows acceptance. See [S5_2A_AUDIO_DIRECTOR.md](S5_2A_AUDIO_DIRECTOR.md).
 
-- Installer/portable build for Windows without bundling torch, CUDA or model weights. Optional Linux AppImage/package later.
-- OS-protected credential persistence and migration. Manual update/pinned API compatibility strategy.
-- CI build artifacts, signed binary strategy if available, comprehensive Windows physical acceptance.
-- Clean first-run flow for connecting to an existing backend; no surprise GPU installation or service takeover.
-- Release checklist, screenshots, onboarding docs, license and reproducible build instructions.
-- Only after frontend works and user explicitly approves: separate review of Morphorum backend draft PR #32 for merging `dev-backend` to backend `main`.
+### S5.2b deferred audio expansion
 
-## Discipline for every milestone
+Not started. Candidate work includes:
 
-1. Check [HANDOFF.md](HANDOFF.md) and actual GitHub refs/CI before claiming state.
-2. Branch `feature/studio-sN-...` from last accepted Studio checkpoint or `main`, never from an unrelated backend branch.
-3. One coherent implementation increment at a time; add unit/mock tests and maintain portable dependencies.
-4. CI must pass on the exact candidate commit.
-5. Stop and give short **Windows physical acceptance instructions**, then fix what the user finds.
-6. After user reports PASS, document test evidence, create an immutable checkpoint ref, and seek user approval before merging Studio code into `main`.
-7. Preserve backend contract boundaries and existing model projects. Avoid speculative controls and code that only looks functional.
-8. Record any discovered backend API gaps as new separate tasks rather than silently weakening Studio correctness.
+- custom bands;
+- bass-intensity/ripple response modes;
+- spectrum view;
+- Backend vs Studio-local analysis selection;
+- other ideas that require either backend support or a deliberately local implementation.
 
-### Important: what is NOT yet delivered
+Backend gaps are tracked in [BACKEND_PROPOSALS.md](BACKEND_PROPOSALS.md). Do not expose controls that have no real implementation.
 
-At the S0 scaffold milestone, there is **no functional connection manager, project editor, render client, media player or release installer**. Those are explicit S1–S7 deliverables. Physical acceptance of the backend does not imply these Studio components already exist.
+### S5.3 Graph
+
+Implemented and CI-tested:
+
+- read-only pipeline diagram;
+- project-stage inspection;
+- keyboard/click selection;
+- navigation to editing workspaces.
+
+Still requires dedicated physical Windows acceptance. See [S5_3_GRAPH.md](S5_3_GRAPH.md).
+
+## Managed local backend track
+
+This was a separate practical feature track, now integrated into `dev-ui`.
+
+Delivered:
+
+- C1 existing local backend management;
+- C1b startup/reconnect integration;
+- C2 backend install workflow;
+- C3 process lifecycle/crash/port/LAN handling;
+- C4 maintenance/update/repair/branch-management workflows;
+- C5 onboarding;
+- BS1/BS2 backend settings, folder validation and model rescanning.
+
+Detailed records live in `docs/C*.md`, `docs/BS*.md` and [MANAGED_BACKEND_PLAN.md](MANAGED_BACKEND_PLAN.md).
+
+## S6: resilience, accessibility and performance
+
+Planned priorities:
+
+- network-loss and reconnect regression coverage;
+- corrupt/partial download recovery;
+- stale ETag and conflict regression coverage;
+- long render-manifest handling;
+- lazy thumbnail/frame loading and bounded cache usage;
+- high-DPI and multi-monitor review;
+- keyboard navigation/tab order;
+- accessible names/descriptions and contrast review;
+- safe shutdown/session recovery;
+- cleanup of known Qt teardown edge cases.
+
+This phase should be driven by actual physical defects first, not cosmetic churn for its own sake.
+
+## S7: packaging and release candidate
+
+Planned:
+
+- Windows installer and/or portable package;
+- no bundled Torch/CUDA/model weights;
+- credential migration/compatibility;
+- update strategy;
+- CI build artifacts;
+- release documentation and screenshots;
+- full clean-machine Windows acceptance;
+- versioning/release checklist.
+
+## Repository and branch discipline
+
+1. Start feature/fix work from current `dev-ui`.
+2. Use one coherent branch per change set.
+3. Keep automated CI distinct from physical Windows acceptance.
+4. Preserve immutable `checkpoint/*` refs.
+5. Delete merged feature branches once ancestry is verified and they contain no unique work.
+6. Do not merge Studio `main` without explicit user approval.
+7. Keep backend and Studio repositories separate.
+8. Update [HANDOFF.md](HANDOFF.md) whenever the actual resume point changes.
+
+## Architecture rules that do not change
+
+- Studio is a pure desktop client; GPU/model work belongs to Morphorum.
+- Runtime backend capabilities beat historical prose.
+- Secrets stay in the OS credential store.
+- GUI threads do not perform blocking network/media work.
+- Strong ETags protect project edits.
+- Durable idempotency protects GPU submissions.
+- Media downloads use temporary files plus integrity validation before replacement.
+- A Studio disconnect or exit must not silently cancel or duplicate backend work.

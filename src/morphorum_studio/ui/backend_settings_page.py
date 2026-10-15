@@ -414,6 +414,7 @@ class BackendSettingsPage(QWidget):
 
     def _failed(self, operation: str, code: str, message: str) -> None:
         self.status_line.setText(f"Could not {'check the folder' if operation == 'check' else operation}: {message}")
+        self.feedback.notify(self.status_line.text(), kind="error")
         self._update()
 
     def _cleared(self) -> None:

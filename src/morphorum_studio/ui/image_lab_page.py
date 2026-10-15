@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QFrame,
     QGridLayout,
+    QBoxLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -119,6 +120,12 @@ class ImageLabPage(QFrame):
 
     # -- construction -------------------------------------------------------------------
 
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        compact = self.width() < 1050
+        self.lab_layout.setDirection(QBoxLayout.Direction.TopToBottom if compact else QBoxLayout.Direction.LeftToRight)
+        self.parameter_scroll.setMaximumWidth(16777215 if compact else 430)
+
     def _build(self) -> None:
         outer = QVBoxLayout(self)
         outer.setContentsMargins(38, 34, 38, 24)
@@ -132,7 +139,8 @@ class ImageLabPage(QFrame):
         self.connect_button.clicked.connect(self.open_connections)
         outer.addWidget(self.connect_button, 0, Qt.AlignmentFlag.AlignLeft)
 
-        body = QHBoxLayout()
+        body = QBoxLayout(QBoxLayout.Direction.LeftToRight)
+        self.lab_layout = body
         body.setSpacing(16)
         outer.addLayout(body, 1)
 
@@ -225,7 +233,9 @@ class ImageLabPage(QFrame):
         form_scroll.setWidgetResizable(True)
         form_scroll.setFrameShape(QFrame.Shape.NoFrame)
         form_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        form_scroll.setFixedWidth(430)
+        self.parameter_scroll = form_scroll
+        form_scroll.setMinimumWidth(300)
+        form_scroll.setMaximumWidth(430)
         form_host = QWidget()
         form_host.setObjectName("connectionsContent")
         form_scroll.setWidget(form_host)

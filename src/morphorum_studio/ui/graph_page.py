@@ -11,6 +11,7 @@ from PySide6.QtGui import QColor, QFont, QKeyEvent, QMouseEvent, QPainter, QPain
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
+    QBoxLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -190,6 +191,12 @@ class GraphPage(QFrame):
         session.changed.connect(self._session_changed)
         self._session_changed()
 
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        compact = self.width() < 950
+        self.graph_layout.setDirection(QBoxLayout.Direction.TopToBottom if compact else QBoxLayout.Direction.LeftToRight)
+        self.inspector.setMaximumWidth(16777215 if compact else 300)
+
     def _build(self) -> None:
         outer = QVBoxLayout(self)
         outer.setContentsMargins(38, 34, 38, 24)
@@ -219,7 +226,8 @@ class GraphPage(QFrame):
         self.bar.setLayout(bar)
         outer.addWidget(self.bar)
 
-        body = QHBoxLayout()
+        body = QBoxLayout(QBoxLayout.Direction.LeftToRight)
+        self.graph_layout = body
         body.setSpacing(14)
         self.canvas = GraphCanvas()
         self.canvas.selected.connect(self._show_node)
@@ -227,7 +235,8 @@ class GraphPage(QFrame):
 
         self.inspector = QFrame()
         self.inspector.setObjectName("infoPanel")
-        self.inspector.setFixedWidth(300)
+        self.inspector.setMinimumWidth(220)
+        self.inspector.setMaximumWidth(300)
         box = QVBoxLayout(self.inspector)
         box.setContentsMargins(18, 18, 18, 18)
         box.setSpacing(8)

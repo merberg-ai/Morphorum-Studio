@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
     QGridLayout,
+    QBoxLayout,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -128,6 +129,12 @@ class ProjectsPage(QFrame):
 
     # -- construction -------------------------------------------------------------------
 
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        compact = self.width() < 1050
+        self.detail_layout.setDirection(QBoxLayout.Direction.TopToBottom if compact else QBoxLayout.Direction.LeftToRight)
+        self.project_sidebar.setMaximumWidth(16777215 if compact else 340)
+
     def _build(self) -> None:
         outer = QVBoxLayout(self)
         outer.setContentsMargins(38, 34, 38, 24)
@@ -192,7 +199,8 @@ class ProjectsPage(QFrame):
         self.projects_stack.addWidget(grid_view)
 
         detail_view = QWidget()
-        body = QHBoxLayout(detail_view)
+        body = QBoxLayout(QBoxLayout.Direction.LeftToRight, detail_view)
+        self.detail_layout = body
         body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(16)
         self.projects_stack.addWidget(detail_view)
@@ -206,7 +214,9 @@ class ProjectsPage(QFrame):
         # -- left: list
         left = QFrame()
         left.setObjectName("card")
-        left.setFixedWidth(340)
+        self.project_sidebar = left
+        left.setMinimumWidth(220)
+        left.setMaximumWidth(340)
         lbox = QVBoxLayout(left)
         lbox.setContentsMargins(14, 14, 14, 14)
         lbox.setSpacing(10)

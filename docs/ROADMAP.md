@@ -16,10 +16,14 @@ This file is the current phase map. Detailed implementation notes and Windows te
 | S5 Motion/Audio/Graph | Implemented | S5.1 physically tested. S5.2a Audio Director and S5.3 Graph passed CI but still need their dedicated Windows checks. S5.2b is not started. |
 | Managed backend C1-C5 | Complete / Windows tested | Simple local backend lifecycle, install/startup/maintenance/onboarding. |
 | Backend settings BS1/BS2 | Complete / Windows tested | Backend path/settings editing, checks and model rescanning. |
+| S5.4 Project settings and UX | In progress on feature branch | Responsive layouts, settings, single-line model paths, toasts, busy indicators, Console API filtering, full project settings. See [S5_4_PROJECT_SETTINGS_UX.md](S5_4_PROJECT_SETTINGS_UX.md). |
 | S6 Resilience/polish | Not started as a dedicated phase | Some groundwork exists, but the formal pass remains. |
 | S7 Packaging/release | Not started | Installer/portable/release-candidate work remains. |
 
 ## Immediate resume point
+
+S5.4 has been explicitly prioritized before resuming S6. See [the S5.4 milestone](S5_4_PROJECT_SETTINGS_UX.md) for scope and verification. The first Console slice is on its unmerged feature branch; the larger milestone remains in progress.
+
 
 Before adding major new features:
 

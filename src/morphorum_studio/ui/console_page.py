@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from html import escape
+import re
 
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
+    QBoxLayout,
     QCheckBox,
     QComboBox,
     QFileDialog,
@@ -31,6 +33,16 @@ LEVEL_COLOR = {"debug": DARK.faint, "info": DARK.text, "warning": DARK.warn,
 STATE_TEXT = {"live": "Live", "connecting": "Connecting…", "reconnecting": "Reconnecting…",
               "stopped": "Not streaming"}
 ALL = "All"
+_ACCESS_LOG = re.compile(r'\b(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+/api/', re.I)
+_STATUS = re.compile(r'\b([1-5]\d{2})\b')
+
+
+def is_api_request_noise(entry: ConsoleEntry) -> bool:
+    """Filter routine API access logging, never warnings or failed requests."""
+    if entry.level not in ("debug", "info") or not _ACCESS_LOG.search(entry.message):
+        return False
+    return not any(int(code) >= 400 for code in _STATUS.findall(entry.message))
+
 
 
 def _label(text: str, name: str, wrap: bool = False) -> QLabel:
@@ -78,8 +90,14 @@ class ConsolePage(QWidget):
         self.status = _label("", "pageDescription", wrap=True)
         box.addWidget(self.status)
 
-        bar = QHBoxLayout()
+        bar = QVBoxLayout()
         bar.setSpacing(8)
+        filters = QBoxLayout(QBoxLayout.Direction.LeftToRight)
+        filters.setSpacing(8)
+        actions = QBoxLayout(QBoxLayout.Direction.LeftToRight)
+        actions.setSpacing(8)
+        self.filter_controls = filters
+        self.action_controls = actions
         self.level = QComboBox()
         self.level.addItem("All levels", "debug")
         self.level.addItem("Info and up", "info")
@@ -94,16 +112,21 @@ class ConsolePage(QWidget):
         self.follow = QCheckBox("Follow")
         self.follow.setChecked(True)
         self.wrap = QCheckBox("Wrap")
+        self.show_api = QCheckBox("Show API requests")
+        self.show_api.setToolTip("Show routine HTTP access lines; warnings and errors are retained.")
         self.clear_button = QPushButton("Clear view")
         self.copy_button = QPushButton("Copy")
         self.save_button = QPushButton("Save…")
-        bar.addWidget(self.level)
-        bar.addWidget(self.category)
-        bar.addWidget(self.search, 1)
-        for widget in (self.follow, self.wrap, self.clear_button, self.copy_button, self.save_button):
+        filters.addWidget(self.level)
+        filters.addWidget(self.category)
+        filters.addWidget(self.search, 1)
+        bar.addLayout(filters)
+        for widget in (self.follow, self.wrap, self.show_api, self.clear_button, self.copy_button, self.save_button):
             if isinstance(widget, QPushButton):
                 widget.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-            bar.addWidget(widget)
+            actions.addWidget(widget)
+        actions.addStretch(1)
+        bar.addLayout(actions)
         box.addLayout(bar)
 
         self.view = QPlainTextEdit()
@@ -119,9 +142,12 @@ class ConsolePage(QWidget):
             self.level.setCurrentIndex(max(0, self.level.findData(self._prefs.ui("console/level", "debug"))))
             self.follow.setChecked(self._prefs.ui("console/follow", "1") == "1")
             self.wrap.setChecked(self._prefs.ui("console/wrap", "0") == "1")
+            self.show_api.setChecked(self._prefs.ui("console/show_api", "0") == "1")
         self.level.currentIndexChanged.connect(lambda _i: self._remember())
         self.follow.toggled.connect(lambda _c: self._remember())
         self.wrap.toggled.connect(lambda _c: self._remember())
+        self.show_api.toggled.connect(lambda _c: self._remember())
+        self.show_api.toggled.connect(lambda _c: self._rebuild())
         self.level.currentIndexChanged.connect(lambda _i: self._rebuild())
         self.category.currentIndexChanged.connect(lambda _i: self._rebuild())
         self.search.textChanged.connect(lambda _t: self._rebuild())
@@ -131,9 +157,19 @@ class ConsolePage(QWidget):
         self.copy_button.clicked.connect(self._copy)
         self.save_button.clicked.connect(self._save)
 
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        compact = self.width() < 760
+        self.filter_controls.setDirection(QBoxLayout.Direction.TopToBottom if compact
+                                          else QBoxLayout.Direction.LeftToRight)
+        self.action_controls.setDirection(QBoxLayout.Direction.TopToBottom if self.width() < 490
+                                          else QBoxLayout.Direction.LeftToRight)
+
     # -- filtering ------------------------------------------------------------------------
 
     def _matches(self, entry: ConsoleEntry) -> bool:
+        if not self.show_api.isChecked() and is_api_request_noise(entry):
+            return False
         floor = LEVELS.index(self.level.currentData())
         if LEVELS.index(entry.level) < floor:
             return False
@@ -162,6 +198,7 @@ class ConsolePage(QWidget):
             self._prefs.set_ui("console/level", str(self.level.currentData()))
             self._prefs.set_ui("console/follow", "1" if self.follow.isChecked() else "0")
             self._prefs.set_ui("console/wrap", "1" if self.wrap.isChecked() else "0")
+            self._prefs.set_ui("console/show_api", "1" if self.show_api.isChecked() else "0")
 
     def _rebuild(self) -> None:
         held = list(self._service.entries)

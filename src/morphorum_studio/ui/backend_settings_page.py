@@ -11,13 +11,13 @@ from urllib.parse import urlsplit
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QBoxLayout,
     QCheckBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QPlainTextEdit,
     QPushButton,
     QSizePolicy,
     QVBoxLayout,
@@ -32,6 +32,7 @@ from morphorum_studio.backend.backend_settings import (
 )
 from morphorum_studio.backend.session import BackendSession
 from morphorum_studio.ui.backend_settings_service import BackendSettingsService
+from morphorum_studio.ui.feedback import FeedbackBanner
 from morphorum_studio.ui.connections_panel import COLUMN_WIDTH, _FitScroll
 
 KIND_TITLE = {"checkpoints": "checkpoint folders", "loras": "LoRA folders"}
@@ -94,9 +95,9 @@ class BackendSettingsPage(QWidget):
         content = QWidget()
         scroll.setWidget(content)
         page = QVBoxLayout(content)
-        page.setContentsMargins(28, 8, 28, 24)
+        page.setContentsMargins(12, 8, 12, 24)
         column = QWidget()
-        column.setMaximumWidth(COLUMN_WIDTH)
+        column.setMaximumWidth(1400)
         column.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         page.addWidget(column, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         page.addStretch(1)
@@ -110,14 +111,19 @@ class BackendSettingsPage(QWidget):
             "Folders are on the backend's computer.", "pageDescription"))
         self.status_line = _label("", "connectionDetails")
         self.layout_.addWidget(self.status_line)
+        # Floating page overlay, not another card that pushes settings controls down.
+        self.feedback = FeedbackBanner(self)
+        self.feedback.setMinimumWidth(260)
+        self._place_feedback()
         self.form = QWidget()
         self.form_box = QVBoxLayout(self.form)
         self.form_box.setContentsMargins(0, 0, 0, 0)
         self.form_box.setSpacing(16)
         self.layout_.addWidget(self.form)
 
-        buttons = QHBoxLayout()
+        buttons = QBoxLayout(QBoxLayout.Direction.LeftToRight)
         buttons.setSpacing(10)
+        self.footer_buttons = buttons
         self.reload_button = _small(QPushButton("Reload"), 90)
         self.reload_button.clicked.connect(self.reload)
         self.revert_button = _small(QPushButton("Revert"), 90)
@@ -135,6 +141,21 @@ class BackendSettingsPage(QWidget):
         self.footer = QWidget()
         self.footer.setLayout(buttons)
         self.layout_.addWidget(self.footer)
+
+    def _place_feedback(self) -> None:
+        available = max(260, self.width() - 28)
+        self.feedback.setFixedWidth(min(460, available))
+        self.feedback.adjustSize()
+        self.feedback.move(max(8, self.width() - self.feedback.width() - 18), 20)
+        self.feedback.raise_()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._place_feedback()
+        direction = (QBoxLayout.Direction.TopToBottom if self.width() < 640
+                     else QBoxLayout.Direction.LeftToRight)
+        if self.footer_buttons.direction() != direction:
+            self.footer_buttons.setDirection(direction)
 
     def _card(self, title: str, note: str = "") -> tuple[QFrame, QVBoxLayout]:
         card = QFrame()
@@ -208,29 +229,61 @@ class BackendSettingsPage(QWidget):
 
     def _folder_card(self, family: str, title: str, kind: str, folders: list[str]) -> None:
         _card, box = self._card(title[:1].upper() + title[1:],
-                                "One folder per line. Folders are on the backend's computer.")
-        edit = QPlainTextEdit()
-        edit.setPlainText("\n".join(folders))
-        edit.setPlaceholderText("No folders yet.")
-        edit.setMinimumHeight(84)
-        edit.setMaximumHeight(140)
-        edit.setToolTip(title)
-        box.addWidget(edit)
+                                "Folders are on the backend's computer. Add one path per field.")
+        paths_box = QVBoxLayout()
+        paths_box.setSpacing(6)
+        box.addLayout(paths_box)
         message = _label("", "hint")
-        box.addWidget(message)
-        entry = {"folders": folders, "message": message, "edit": edit}
+        entry = {"folders": folders, "message": message, "paths_box": paths_box,
+                 "edits": [], "remove_buttons": [], "edit": None}
         self._rows.append(entry)
 
-        def typed() -> None:
-            folders[:] = [line.strip() for line in edit.toPlainText().splitlines() if line.strip()]
+        def changed() -> None:
+            folders[:] = [edit.text().strip() for edit in entry["edits"] if edit.text().strip()]
             self._show_messages(entry)
             self._update()
 
-        edit.textChanged.connect(typed)
+        def remove(edit: QLineEdit) -> None:
+            index = entry["edits"].index(edit)
+            entry["edits"].pop(index)
+            entry["remove_buttons"].pop(index)
+            row = paths_box.takeAt(index)
+            if row is not None and row.widget() is not None:
+                row.widget().deleteLater()
+            if not entry["edits"]:
+                add_path("")
+            changed()
+
+        def add_path(value: str = "") -> None:
+            row = QWidget()
+            layout = QHBoxLayout(row)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(8)
+            edit = QLineEdit(value)
+            edit.setPlaceholderText("Folder path on the backend computer")
+            edit.setToolTip(title)
+            edit.setAccessibleName(f"{title} folder path")
+            edit.textEdited.connect(lambda _text: changed())
+            layout.addWidget(edit, 1)
+            remove_button = _small(QPushButton("Remove"))
+            remove_button.clicked.connect(lambda _checked=False, field=edit: remove(field))
+            layout.addWidget(remove_button)
+            entry["edits"].append(edit)
+            entry["remove_buttons"].append(remove_button)
+            entry["edit"] = entry["edits"][0]
+            paths_box.addWidget(row)
+
+        entry["add_path"] = add_path
+        for value in folders or [""]:
+            add_path(value)
+        box.addWidget(message)
         buttons = QHBoxLayout()
         buttons.setSpacing(8)
+        add = _small(QPushButton("Add folder"), 105)
+        add.clicked.connect(lambda: add_path(""))
+        buttons.addWidget(add)
         if self._local():
-            browse = _small(QPushButton("Add folder…"), 120)
+            browse = _small(QPushButton("Browse…"), 90)
             browse.clicked.connect(lambda: self._browse_into(entry))
             buttons.addWidget(browse)
         check = _small(QPushButton("Check folders"), 120)
@@ -243,8 +296,14 @@ class BackendSettingsPage(QWidget):
     def _browse_into(self, entry: dict) -> None:
         chosen = self._choose(self, entry["folders"][-1] if entry["folders"] else "")
         if chosen and chosen not in entry["folders"]:
-            edit = entry["edit"]
-            edit.setPlainText("\n".join([*entry["folders"], chosen]))
+            blank = next((edit for edit in entry["edits"] if not edit.text().strip()), None)
+            if blank is None:
+                entry["add_path"](chosen)
+            else:
+                blank.setText(chosen)
+            entry["folders"][:] = [edit.text().strip() for edit in entry["edits"] if edit.text().strip()]
+            self._show_messages(entry)
+            self._update()
 
     def _check_folders(self, entry: dict) -> None:
         for path in entry["folders"][:MAX_CHECKS]:
@@ -309,12 +368,16 @@ class BackendSettingsPage(QWidget):
             self.status_line.setText("Nothing has changed.")
             return
         self.status_line.setText("Saving…")
+        self.feedback.notify("Saving backend settings…", busy=True)
+        self._place_feedback()
         self._rescan_after_save = "models" in body or "managed_models" in body
         self._service.save(body)
 
     def rescan(self) -> None:
         if self._service.available and not self._service.busy:
             self.status_line.setText("Rescanning models… this can take a while for large folders.")
+            self.feedback.notify("Scanning backend model directories…", busy=True)
+            self._place_feedback()
             self._service.rescan()
 
     @property
@@ -331,6 +394,8 @@ class BackendSettingsPage(QWidget):
         self._remember_checks(data)
         self._build_form()
         self.status_line.setText("")
+        self.feedback.notify("Backend settings loaded.", kind="success")
+        self._place_feedback()
         self._update()
 
     def _saved(self, data: BackendSettings) -> None:
@@ -342,9 +407,13 @@ class BackendSettingsPage(QWidget):
         if self._rescan_after_save:
             self._rescan_after_save = False
             self.status_line.setText(text + " Rescanning models…")
+            self.feedback.notify(text + " Rescanning models…", kind="warning" if bad else "info", busy=True)
+            self._place_feedback()
             self._service.rescan()  # the backend only lists models after a scan
         else:
             self.status_line.setText(text)
+            self.feedback.notify(text, kind="warning" if bad else "success")
+            self._place_feedback()
         self._update()
 
     def _checked(self, path: str, found: PathCheck) -> None:
@@ -355,10 +424,14 @@ class BackendSettingsPage(QWidget):
     def _scanned(self, result) -> None:
         labels = {f.id: f.label for f in self.draft.families} if self.draft is not None else {}
         self.status_line.setText(result.describe(labels))
+        self.feedback.notify("Model scan finished. " + result.describe(labels), kind="success")
+        self._place_feedback()
         self.models_changed.emit()
 
     def _failed(self, operation: str, code: str, message: str) -> None:
         self.status_line.setText(f"Could not {'check the folder' if operation == 'check' else operation}: {message}")
+        self.feedback.notify(self.status_line.text(), kind="error")
+        self._place_feedback()
         self._update()
 
     def _cleared(self) -> None:
@@ -366,6 +439,7 @@ class BackendSettingsPage(QWidget):
         self._requested = False
         self._checks = {}
         self._clear_form()
+        self.feedback.hide()
         self._update()
 
     def _session_changed(self) -> None:

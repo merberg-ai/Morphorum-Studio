@@ -7,7 +7,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import copy
 
 import pytest
-from PySide6.QtWidgets import QApplication, QCheckBox, QLabel, QLineEdit, QPlainTextEdit, QPushButton
+from PySide6.QtWidgets import QApplication, QCheckBox, QLabel, QLineEdit, QPushButton
 
 from morphorum_studio.backend.backend_settings import (
     SettingsApi,
@@ -69,7 +69,8 @@ class FakeClient:
             assert method == "PUT"
             self.puts.append(copy.deepcopy(body))
             _merge(self.state["settings"], body)
-            return {"status": "saved", **copy.deepcopy(self.state)}, None
+            return {"status": "saved", "settings": copy.deepcopy(self.state["settings"]),
+                    "validation": copy.deepcopy(self.state["validation"])}, None
         if path == "/api/settings/validate-path":
             self.checks.append(body["path"])
             return {"path": body["path"], "exists": True, "is_directory": True, "readable": True}, None
@@ -194,9 +195,7 @@ def test_loads_when_shown_active_and_builds_the_form():
     info = SessionInfo("p1", "W", "http://10.0.0.5:7866", "0.1.0", "backend-only", "i1", "b1", {})
     session.connected(info, "t")  # visible page + connected -> loads
     assert page.original is not None and page.form.isVisibleTo(page)
-    assert [e.text() for e in page.form.findChildren(QLineEdit)] == [r".\ckpts\z-image"]
-    lists = [e.toPlainText() for e in page.form.findChildren(QPlainTextEdit)]
-    assert lists == [r"D:\models\sdxl", "", "", "", r"D:\loras"]
+    assert [e.text() for e in page.form.findChildren(QLineEdit)] == [r"D:\models\sdxl", "", "", "", r"D:\loras", r".\ckpts\z-image"]
     boxes = {b.text(): b.isChecked() for b in page.form.findChildren(QCheckBox)}
     assert boxes == {"Unload after generation": False, "SDXL VAE tiling": True}
     assert not page.save_button.isEnabled()
@@ -229,7 +228,9 @@ def test_saving_folders_rescans_by_itself_and_tells_the_app():
     changed = []
     page.models_changed.connect(lambda: changed.append(1))
     edit = page._rows[0]["edit"]
-    edit.setPlainText(edit.toPlainText() + "\nE:\\more")
+    page._rows[0]["add_path"](r"E:\more")
+    page._rows[0]["edits"][1].setText(r"E:\more")
+    page._rows[0]["edits"][1].textEdited.emit(r"E:\more")
     page.save_button.click()
     assert client.puts and client.scans == 1 and changed == [1]
     assert "Rescan finished" in page.status_line.text()
@@ -238,7 +239,8 @@ def test_saving_folders_rescans_by_itself_and_tells_the_app():
 def test_an_empty_scan_explains_what_files_are_expected():
     client, session, service, page = rig()
     client.scan_total = 0
-    page._rows[0]["edit"].setPlainText(r"D:\empty")
+    page._rows[0]["edit"].setText(r"D:\empty")
+    page._rows[0]["edit"].textEdited.emit(r"D:\empty")
     page.save_button.click()
     assert ".safetensors" in page.status_line.text() and "no models" in page.status_line.text()
 
@@ -246,14 +248,16 @@ def test_an_empty_scan_explains_what_files_are_expected():
 def test_edit_folders_and_revert():
     client, session, service, page = rig()
     edit = page._rows[0]["edit"]  # SDXL checkpoint folders
-    edit.setPlainText(edit.toPlainText() + "\n  E:\\new  \n\n")
+    page._rows[0]["add_path"](r"E:\new")
+    page._rows[0]["edits"][1].textEdited.emit(r"E:\new")
     assert page.dirty and page.draft.paths["sdxl"]["checkpoints"] == [r"D:\models\sdxl", r"E:\new"]
     page.save_button.click()
     assert client.puts == [{"models": {"sdxl": {"checkpoints": [r"D:\models\sdxl", r"E:\new"]}}}]
-    page._rows[0]["edit"].setPlainText("")
+    page._rows[0]["edit"].setText("")
+    page._rows[0]["edit"].textEdited.emit("")
     assert page.dirty
     page.revert_button.click()
-    assert not page.dirty and page._rows[0]["edit"].toPlainText() == "D:\\models\\sdxl\nE:\\new"
+    assert not page.dirty and [e.text() for e in page._rows[0]["edits"]] == [r"D:\models\sdxl", r"E:\new"]
 
 
 def test_check_asks_the_backend_and_shows_the_answer():
@@ -266,14 +270,16 @@ def test_check_asks_the_backend_and_shows_the_answer():
 
 def test_browse_only_for_a_backend_on_this_pc():
     _c, _s, _svc, remote = rig(url="http://10.0.0.5:7866")
-    assert not [b for b in remote.form.findChildren(QPushButton) if b.text().startswith(("Add folder", "Browse"))]
+    assert not [b for b in remote.form.findChildren(QPushButton) if b.text().startswith("Browse")]
     _c, _s, _svc, local = rig(url="http://127.0.0.1:7866", chosen=r"F:\picked")
-    add = [b for b in local.form.findChildren(QPushButton) if b.text().startswith("Add folder")]
+    add = [b for b in local.form.findChildren(QPushButton) if b.text() == "Add folder"]
     assert add
     add[0].click()
-    assert local.draft.paths["sdxl"]["checkpoints"] == [r"D:\models\sdxl", r"F:\picked"] and local.dirty
+    assert not local.dirty  # an empty extra row is only a UI draft
     browse = [b for b in local.form.findChildren(QPushButton) if b.text().startswith("Browse")]
-    assert browse  # the managed storage row
+    assert browse
+    browse[0].click()
+    assert local.draft.paths["sdxl"]["checkpoints"] == [r"D:\models\sdxl", r"F:\picked"] and local.dirty
 
 
 def test_failures_are_explained_and_a_disconnect_clears_the_form():

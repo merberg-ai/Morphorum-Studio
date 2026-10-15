@@ -1,7 +1,8 @@
-"""Settings workspace: backend connection setup and desktop preferences on one page."""
+"""Settings workspace: separate connection, backend configuration and Studio preferences."""
 
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QTabWidget, QVBoxLayout, QWidget
 
 from morphorum_studio.ui.backend_settings_page import BackendSettingsPage
@@ -18,11 +19,14 @@ class SettingsPage(QWidget):
         box = QVBoxLayout(self)
         box.setContentsMargins(24, 18, 24, 12)
         self.tabs = QTabWidget()
-        self.tabs.addTab(connections, "Backend connection")
+        self.tabs.addTab(connections, "Connections")
         self.backend_settings = backend_settings
         if backend_settings is not None:
-            self.tabs.addTab(backend_settings, "Backend settings")
-        self.tabs.addTab(preferences, "Desktop preferences")
+            self.tabs.addTab(backend_settings, "Backend configuration")
+        self.tabs.addTab(preferences, "Studio preferences")
+        self.tabs.setDocumentMode(True)
+        self.tabs.setUsesScrollButtons(True)
+        self.tabs.setElideMode(Qt.TextElideMode.ElideRight)
         self.tabs.currentChanged.connect(self._tab_changed)
         box.addWidget(self.tabs)
 

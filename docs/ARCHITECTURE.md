@@ -1,104 +1,226 @@
 # Morphorum Studio architecture contract
 
-## Current implementation boundary (verified 2026-10-13)
+## Purpose
 
-This file describes both **implemented** components and **future** components. The original "Planned packages" tree below is historical guidance, not a directory listing. For exact present code and current branches consult [HANDOFF.md](HANDOFF.md) and fetch dev-ui.
+Morphorum Studio is a **native PySide6 desktop client** for the separate Morphorum GPU backend.
 
-Implemented on Studio **dev-ui**:
-- Native Qt bootstrap/splash: app.py, ui/splash.py, package artwork in src/morphorum_studio/assets/splash-logo.jpg.
-- Desktop shell: ui/main_window.py, ui/theme.py, nine workspaces; only Connections and Settings have real milestone interfaces.
-- Session preferences: ui/preferences.py (QSettings, nonsecret), ui/startup_settings.py (visible settings controls), window geometry/workspace/last selected+successful connection persistence.
-- Secure connection: backend/client.py (discovery HTTP), backend/worker.py (off-thread QRunnable), backend/profiles.py (nonsecret JSON profiles), backend/credentials.py (OS keyring), ui/connections_panel.py (credential import, consent, identity, status, passive monitoring/reconnect).
-- CI/read-only wheel smoke: tests/* and scripts/verify_clean_install.py.
+It is not:
 
-**S2 architectural decision needed before coding:** other workspaces require telemetry and models via a shared authenticated connection context. Currently ConnectionsPanel owns the active profile, probes, and reconnect state. Do not give individual pages their own keyring lookups and duplicate health pollers. Extract a reusable session/data boundary, publish signals or typed snapshots from worker threads, and ensure profile switch/disconnect invalidates all pending requests. Keep network off the Qt event loop.
+- an embedded copy of the Morphorum browser UI;
+- a local inference bundle;
+- a CUDA/PyTorch/model installer inside the Studio Python environment;
+- a shared-filesystem wrapper around backend directories.
 
-**Two security distinctions:** QSettings trusted-HTTP approval means the user explicitly accepted sending credentials over **unencrypted** HTTP to that exact profile URL, not that the host is cryptographically verified. instance_id detects unexpected backend changes but is not TLS identity; an unfamiliar instance still requires independent user approval.
+All generation, model indexing, animation rendering, media export and GPU work belongs to Morphorum. Studio owns native desktop UX, client state, safe request/recovery logic and optional management of a deliberately configured local backend installation.
 
----
+## Current implementation boundary
 
+As of 2026-10-14, the integrated `dev-ui` branch contains the working client stack through S5 plus the managed-backend track.
+
+Representative package layout:
+
+```text
+src/morphorum_studio/
+  app.py, __main__.py
+  backend/
+    client.py              HTTP transport and error handling
+    session.py             active authenticated client/session state
+    profiles.py            nonsecret connection profiles
+    credentials.py         OS keyring token storage
+    projects.py            project CRUD / ETag handling
+    assets.py              project media transfer and verification
+    images.py              still-image API
+    renders.py             animation/render lifecycle
+    videos.py              video export and verified download
+    timeline.py            timeline/keyframe API model
+    motion.py              Motion Lab data/API helpers
+    audio.py               audio analysis/layer model
+    graph.py               project pipeline graph model
+    managed.py             local managed backend state/process/install support
+    maintenance.py         managed backend maintenance
+    backend_settings.py    backend settings/model path API
+    console.py             backend console access
+  ui/
+    main_window.py
+    home_page.py
+    projects_page.py
+    image_lab_page.py
+    editor_page.py
+    motion_panel.py
+    audio_widgets.py
+    graph_page.py
+    queue_page.py
+    console_page.py
+    settings_page.py
+    connections_panel.py
+    managed_backend.py
+    ...
+tests/
+docs/
+scripts/
+```
+
+Exact filenames evolve. [HANDOFF.md](HANDOFF.md) and the source tree beat this summary if they differ.
 
 ## System boundary
 
 ```text
-  ┌──────────────────────────── Morphorum Studio ──────────────────────────┐
-  │ PySide6 / Qt native Windows desktop UI; Linux-compatible              │
-  │                                                                    │
-  │  Native Workspaces / Navigation / Editors / Video Preview             │
-  │             │                                    │                     │
-  │        State models                         Qt workers                │
-  │             │                                    │                     │
-  │      Connection profiles ─ secure OS token store ─ API client          │
-  │                               │                                        │
-  └───────────────────────────────┼────────────────────────────────────────┘
-                                  │ HTTP(S) REST + ephemeral SSE
-                                  ▼
-  ┌──────────────────── Morphorum GPU backend ────────────────────────────┐
-  │ /api/client/capabilities, models, projects, jobs, events, media files │
-  │ CUDA / SDXL / FLUX / Z-Image / render workers / FFmpeg / storage       │
-  └────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────── Morphorum Studio ──────────────────────────┐
+│ Native PySide6 UI                                                   │
+│                                                                     │
+│  pages/widgets                                                      │
+│       │                                                             │
+│  Qt services/workers ────── session snapshots / typed state         │
+│       │                                                             │
+│  API clients ─ profiles ─ OS keyring ─ durable request journals     │
+│       │                                                             │
+│  optional managed-local-backend lifecycle adapter                   │
+└───────┼─────────────────────────────────────────────────────────────┘
+        │ authenticated HTTP(S), optional ephemeral event streams
+        ▼
+┌──────────────────────── Morphorum backend ──────────────────────────┐
+│ projects / models / telemetry / jobs / frames / exports / settings │
+│ CUDA / model pipelines / render workers / FFmpeg / backend storage │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-The backend is a **different repository**: https://github.com/merberg-ai/Morphorum. Studio does not import backend source, share its model directories or control its process lifetime simply because it connects to it.
+## Source of truth
 
-**Accepted backend baseline:** `dev-backend` commit `2046d36ff6e084d801a14e2024d14665c207d884`, API contract v1. Backend `main` remains unchanged pending the user's future approval of draft PR #32.
+The former backend `dev-backend` development line was merged into Morphorum `main` on 2026-10-14. Current client work must use:
 
-## Planned packages
+1. the actual Morphorum `main` implementation;
+2. the authenticated runtime capability response;
+3. live response schemas exercised by tests/physical checks.
 
-```text
-src/morphorum_studio/
-  __main__.py, app.py              # process bootstrap
-  ui/
-    theme.py, main_window.py       # S0 existing native shell
-    connections.py                 # S1
-    projects.py, assets.py         # S2
-    image_lab.py, render_queue.py  # S3
-    editor/, timeline/             # S4
-    motion_lab/, audio_director/   # S5
-  backend/                         # Added during S1+
-    client.py                      # typed, authenticated API transport
-    credentials.py                 # OS-native keyring
-    profiles.py                    # non-secret stored profiles
-    events.py                      # SSE and state reconciliation
-    sessions.py                    # durable keyed render sessions
-    downloads.py                   # verified media transfer
-  models/                          # UI-only typed view state
-tests/
-docs/
-```
+Old Studio milestone documents that mention `dev-backend` are historical evidence, not a promise that the branch or linked backend documents still exist.
 
-The example tree above originated during S0. Implemented S1/pre-S2 modules now exist as listed at the top of this file. Future project/editor/job/media modules are **planned** and must not be represented as implemented.
+Backend API contract version 1 remains the compatibility gate unless the live backend advertises otherwise.
 
-## API and job lifecycle invariants
+## Connection/session model
 
-- Authenticate capabilities and health before claiming connection. Treat `api_contract_version=1` as a strict gate, recheck flags as capabilities evolve.
-- Do not send browser `Origin` headers. The backend rejects them in backend-only mode.
-- Store base URL and persistent `instance_id` separately. Identical instance ID is a continuity hint, **not** cryptographic identity. TLS certificate verification is independent.
-- Changed `boot_id` resets in-memory SSE cursors. Never rely on durable SSE replay; job GET and persisted completed-frame records are the source of truth.
-- Persist the *exact full project POST body* plus stable `Idempotency-Key` to protected local session storage **before** submitting a render. Never retry uncertain submits with a new key automatically. HTTP 409 pending/uncertain means stop and reconcile.
-- Existing browser mode can still edit projects. Studio must use strong project revision ETags on conditional save (`If-Match`); return HTTP 412 conflict to user rather than overwriting.
-- Download image/WAV/MP4/WebM/GIF into a temporary file, check expected size/hash and media signature, then atomically replace. A failed transfer must not destroy an existing file.
-- Audio input analysis and imported soundtrack attachment are separate capabilities; do not fuse them into a fictitious single API.
-- A backend process restart can interrupt active renders. Never imply GPU inference keeps running through process death. Completed renders are persistently recoverable.
-- Never stop a remotely attached backend on Studio exit.
+There should be **one authoritative active session** shared by UI services.
 
-## Security and privacy
+Pages must not each:
 
-- Auth secrets are never committed, printed, echoed in a diagnostic panel or written to plain JSON profile/session files.
-- Use a backend-host CLI to issue/revoke per-client credentials. Studio does not invent a new insecure pairing endpoint.
-- Treat bare HTTP as **trusted-LAN-only**. Prefer authenticated encrypted VPN or TLS when leaving a trusted network.
-- Restrict redirects and URL origins for authenticated media downloads to the connected backend. Scrub secrets from error logs.
-- User-provided prompts, images and soundtrack files can be private. Keep cache/session data out of Git, apply OS permissions and offer cache clearing.
-- Never infer a local filesystem path from server-relative diagnostic paths.
-- Do not block the Qt GUI event loop on network, downloads, FFmpeg, or image decoding.
+- read tokens independently;
+- create their own reconnect loops;
+- invent their own backend identity rules;
+- keep using a client after profile/session epoch changes.
 
-## Backend reference documentation
+When the active profile, instance or boot changes, pending page work must either be invalidated or explicitly reconciled.
 
-- [Backend's full Studio handoff](https://github.com/merberg-ai/Morphorum/blob/dev-backend/docs/STUDIO_CLIENT_HANDOFF.md)
-- [Client contract](https://github.com/merberg-ai/Morphorum/blob/dev-backend/docs/DB2_CLIENT_CONTRACT.md)
-- [Client security and profiles](https://github.com/merberg-ai/Morphorum/blob/dev-backend/docs/DB2_CONNECTION_MANAGER.md)
-- [Project media assets](https://github.com/merberg-ai/Morphorum/blob/dev-backend/docs/DB2_PROJECT_ASSETS.md)
-- [Live events and recovery](https://github.com/merberg-ai/Morphorum/blob/dev-backend/docs/DB2_LIVE_RECOVERY.md)
-- [Final backend physical acceptance](https://github.com/merberg-ai/Morphorum/blob/dev-backend/docs/DB2_FINAL_ACCEPTANCE.md)
+Network I/O belongs off the Qt GUI thread.
 
-If documentation and the actual runtime diverge, inspect the `dev-backend` source and live authenticated capabilities before implementing UI behavior.
+## Security invariants
+
+### Credentials
+
+- Store bearer secrets in the OS credential store.
+- Do not put them in profile JSON, QSettings, URLs, screenshots, logs or test output.
+- Reject or scrub credential-bearing redirects.
+- Never expose a token in the Console UI.
+
+### HTTP trust
+
+An explicit trusted-LAN approval means only that the user accepted sending credentials over plaintext HTTP to that exact target. It is **not** TLS authentication.
+
+`instance_id` continuity is useful for detecting unexpected backend replacement, but it is not cryptographic identity.
+
+### Remote lifecycle
+
+A normal remote connection never grants Studio the right to stop the backend process.
+
+Managed-local-backend process controls apply only to the installation/process Studio can positively identify as its configured local backend.
+
+## Project integrity
+
+- Read projects with their strong ETag.
+- Save with `If-Match`.
+- Treat HTTP 412 as a visible conflict requiring reload/review/cancel behavior.
+- Never silently overwrite a newer backend revision.
+- Do not infer backend filesystem paths as client-local paths.
+
+## GPU request integrity
+
+Before submitting a generation/render request that requires idempotency:
+
+1. freeze the exact request body;
+2. generate/store the durable idempotency key;
+3. persist both before POST;
+4. submit that exact pair;
+5. reconcile uncertain/pending responses instead of generating a new key.
+
+A 409 or lost response is not permission to duplicate expensive GPU work. Humanity already has enough accidental duplication.
+
+## Job/reconnect semantics
+
+- backend `boot_id` changes invalidate ephemeral event cursors;
+- persisted job/render GET endpoints and completed frame manifests are authoritative;
+- an event stream is an optimization, not durable history;
+- backend process death can interrupt active GPU work;
+- completed persisted output may recover after restart;
+- Studio must never display a vanished running job as healthy merely because local state says it used to exist.
+
+## Media transfer
+
+For project media, generated images and exports:
+
+- download to a temporary/part file;
+- enforce expected origin;
+- validate expected size/hash when provided;
+- validate basic media signature/format;
+- atomically replace the destination only after validation.
+
+A failed transfer must not destroy an existing valid local file.
+
+Soundtrack ownership and Motion Lab analysis audio are separate concepts. Do not silently substitute one for the other.
+
+## Audio Director boundary
+
+Current Studio can locally decode common compressed audio through Qt Multimedia into the WAV form expected by the backend's analysis endpoint. Backend-side decode/custom-band/extra-response behavior is not assumed unless advertised and implemented.
+
+Potential expansions that need backend or deliberate local-analysis work are tracked in [BACKEND_PROPOSALS.md](BACKEND_PROPOSALS.md).
+
+## Managed local backend boundary
+
+The managed-backend track lets Studio deliberately install/manage a local Morphorum checkout.
+
+It must remain isolated from normal remote-client semantics:
+
+- explicit install consent;
+- validated target folder;
+- no destructive writes outside the managed folder except actions performed by Morphorum's own installer with user-visible consent;
+- process ownership/identity checks before Stop/Restart;
+- clear handling of port conflicts;
+- no secret leakage;
+- managed data excluded from Git.
+
+See `C1_MANAGED_BACKEND.md`, `C2_INSTALLER.md`, `C3_LIFECYCLE.md`, `C4_MAINTENANCE.md`, `C5_ONBOARDING.md` and `BS*.md`.
+
+## UI architecture
+
+Pages should use service objects/signals rather than performing blocking backend work directly.
+
+Stable internal page keys are important because navigation, saved preferences and cross-page links depend on them. User-facing display names may differ from those keys.
+
+At smaller desktop sizes, functional scrolling/reflow is preferable to truncating controls. S6 will formalize high-DPI, accessibility, keyboard and performance review.
+
+## Testing layers
+
+Use all three where appropriate:
+
+1. **unit/parse/model tests** for deterministic logic;
+2. **Qt offscreen/CI tests** for native widget and service behavior on Windows/Ubuntu;
+3. **physical Windows/backend tests** for codecs, playback, real network/backend lifecycle, GPU work and desktop-specific behavior.
+
+Passing layer 2 does not magically prove layer 3. Computers remain stubbornly physical despite decades of marketing.
+
+## Repository architecture rules
+
+- `dev-ui` is the current integrated development branch.
+- `main` stays untouched until explicitly approved.
+- historical feature branches may be deleted after proving they are fully contained in `dev-ui`;
+- `checkpoint/*` refs remain immutable evidence;
+- `ui-screenshots` has intentionally independent generated history.
+
+For current resume state, always read [HANDOFF.md](HANDOFF.md).

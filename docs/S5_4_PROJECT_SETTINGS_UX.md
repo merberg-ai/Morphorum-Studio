@@ -20,6 +20,14 @@
 - **S5.4d Project settings:** creation wizard, existing project editor, model-aware fields, tracked schema updates and validation.
 - **S5.4e Verify/integrate:** CI (Ubuntu/Windows), physical Windows resizing and real backend test, docs/checkpoint, then review merge to `dev-ui`.
 
+## S5.4a implementation progress (2026-10-14)
+
+- Converted external checkpoint/LoRA directory lists to distinct single-line entries, with Add folder, Remove, Check folders and local-only Browse. An empty row is not persisted.
+- Removed the model settings content column's old narrow width cap; cards can expand with the Settings page.
+- Backend settings footer and Console filters/actions switch from rows to vertical stacks in compact windows.
+- Updated the existing backend settings tests for per-path entries and Browse behavior.
+- **Remaining in S5.4a:** application-wide responsive audit (Library, Timeline, Image Lab, Graph, managed backend, other settings), improved Settings information architecture, physical window/scaling acceptance. Do not represent this as completed responsive support.
+
 ## First implementation slice
 
 The Console now includes Show API requests (off by default), remembers the choice when preferences are available, and separates filters from other actions into two rows. The filter only removes routine debug/info HTTP API access records; 4xx/5xx records and warning/error levels remain visible. Regression tests added. **Do not regard this slice as the whole milestone; CI and physical Windows verification remain pending.**

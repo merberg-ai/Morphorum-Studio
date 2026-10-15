@@ -17,7 +17,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QPlainTextEdit,
     QPushButton,
     QSizePolicy,
     QVBoxLayout,
@@ -94,9 +93,9 @@ class BackendSettingsPage(QWidget):
         content = QWidget()
         scroll.setWidget(content)
         page = QVBoxLayout(content)
-        page.setContentsMargins(28, 8, 28, 24)
+        page.setContentsMargins(12, 8, 12, 24)
         column = QWidget()
-        column.setMaximumWidth(COLUMN_WIDTH)
+        column.setMaximumWidth(1400)
         column.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         page.addWidget(column, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         page.addStretch(1)
@@ -208,29 +207,61 @@ class BackendSettingsPage(QWidget):
 
     def _folder_card(self, family: str, title: str, kind: str, folders: list[str]) -> None:
         _card, box = self._card(title[:1].upper() + title[1:],
-                                "One folder per line. Folders are on the backend's computer.")
-        edit = QPlainTextEdit()
-        edit.setPlainText("\n".join(folders))
-        edit.setPlaceholderText("No folders yet.")
-        edit.setMinimumHeight(84)
-        edit.setMaximumHeight(140)
-        edit.setToolTip(title)
-        box.addWidget(edit)
+                                "Folders are on the backend's computer. Add one path per field.")
+        paths_box = QVBoxLayout()
+        paths_box.setSpacing(6)
+        box.addLayout(paths_box)
         message = _label("", "hint")
-        box.addWidget(message)
-        entry = {"folders": folders, "message": message, "edit": edit}
+        entry = {"folders": folders, "message": message, "paths_box": paths_box,
+                 "edits": [], "remove_buttons": [], "edit": None}
         self._rows.append(entry)
 
-        def typed() -> None:
-            folders[:] = [line.strip() for line in edit.toPlainText().splitlines() if line.strip()]
+        def changed() -> None:
+            folders[:] = [edit.text().strip() for edit in entry["edits"] if edit.text().strip()]
             self._show_messages(entry)
             self._update()
 
-        edit.textChanged.connect(typed)
+        def remove(edit: QLineEdit) -> None:
+            index = entry["edits"].index(edit)
+            entry["edits"].pop(index)
+            entry["remove_buttons"].pop(index)
+            row = paths_box.takeAt(index)
+            if row is not None and row.widget() is not None:
+                row.widget().deleteLater()
+            if not entry["edits"]:
+                add_path("")
+            changed()
+
+        def add_path(value: str = "") -> None:
+            row = QWidget()
+            layout = QHBoxLayout(row)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(8)
+            edit = QLineEdit(value)
+            edit.setPlaceholderText("Folder path on the backend computer")
+            edit.setToolTip(title)
+            edit.setAccessibleName(f"{title} folder path")
+            edit.textEdited.connect(lambda _text: changed())
+            layout.addWidget(edit, 1)
+            remove_button = _small(QPushButton("Remove"))
+            remove_button.clicked.connect(lambda _checked=False, field=edit: remove(field))
+            layout.addWidget(remove_button)
+            entry["edits"].append(edit)
+            entry["remove_buttons"].append(remove_button)
+            entry["edit"] = entry["edits"][0]
+            paths_box.addWidget(row)
+
+        entry["add_path"] = add_path
+        for value in folders or [""]:
+            add_path(value)
+        box.addWidget(message)
         buttons = QHBoxLayout()
         buttons.setSpacing(8)
+        add = _small(QPushButton("Add folder"), 105)
+        add.clicked.connect(lambda: add_path(""))
+        buttons.addWidget(add)
         if self._local():
-            browse = _small(QPushButton("Add folder…"), 120)
+            browse = _small(QPushButton("Browse…"), 90)
             browse.clicked.connect(lambda: self._browse_into(entry))
             buttons.addWidget(browse)
         check = _small(QPushButton("Check folders"), 120)
@@ -243,8 +274,14 @@ class BackendSettingsPage(QWidget):
     def _browse_into(self, entry: dict) -> None:
         chosen = self._choose(self, entry["folders"][-1] if entry["folders"] else "")
         if chosen and chosen not in entry["folders"]:
-            edit = entry["edit"]
-            edit.setPlainText("\n".join([*entry["folders"], chosen]))
+            blank = next((edit for edit in entry["edits"] if not edit.text().strip()), None)
+            if blank is None:
+                entry["add_path"](chosen)
+            else:
+                blank.setText(chosen)
+            entry["folders"][:] = [edit.text().strip() for edit in entry["edits"] if edit.text().strip()]
+            self._show_messages(entry)
+            self._update()
 
     def _check_folders(self, entry: dict) -> None:
         for path in entry["folders"][:MAX_CHECKS]:

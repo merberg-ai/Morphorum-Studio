@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QBoxLayout,
     QCheckBox,
     QFileDialog,
     QFrame,
@@ -115,8 +116,9 @@ class BackendSettingsPage(QWidget):
         self.form_box.setSpacing(16)
         self.layout_.addWidget(self.form)
 
-        buttons = QHBoxLayout()
+        buttons = QBoxLayout(QBoxLayout.Direction.LeftToRight)
         buttons.setSpacing(10)
+        self.footer_buttons = buttons
         self.reload_button = _small(QPushButton("Reload"), 90)
         self.reload_button.clicked.connect(self.reload)
         self.revert_button = _small(QPushButton("Revert"), 90)
@@ -134,6 +136,13 @@ class BackendSettingsPage(QWidget):
         self.footer = QWidget()
         self.footer.setLayout(buttons)
         self.layout_.addWidget(self.footer)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        direction = (QBoxLayout.Direction.TopToBottom if self.width() < 640
+                     else QBoxLayout.Direction.LeftToRight)
+        if self.footer_buttons.direction() != direction:
+            self.footer_buttons.setDirection(direction)
 
     def _card(self, title: str, note: str = "") -> tuple[QFrame, QVBoxLayout]:
         card = QFrame()

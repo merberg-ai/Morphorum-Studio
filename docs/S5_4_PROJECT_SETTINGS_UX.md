@@ -28,6 +28,13 @@
 - Updated the existing backend settings tests for per-path entries and Browse behavior.
 - **Remaining in S5.4a:** application-wide responsive audit (Library, Timeline, Image Lab, Graph, managed backend, other settings), improved Settings information architecture, physical window/scaling acceptance. Do not represent this as completed responsive support.
 
+## S5.4b physical-test fix: save acknowledgement and floating toast
+
+- Windows screenshot exposed a misleading **Could not save: The backend did not describe its model families** after settings had persisted. Morphorum GET returns model_families; successful PUT returns status/settings/validation without model_families. Studio now confirms PUT then fetches a complete GET response before rebuilding the settings form.
+- Regression tests now simulate the real partial PUT response, rather than an unrealistically complete mocked response.
+- Backend Settings feedback is positioned as an overlay at top-right of the page, not inserted inline into the settings cards.
+- Windows verification of the corrected toast and save flow remains required; don't claim this is a complete global toast system.
+
 ## S5.4b feedback foundation (in progress)
 
 - Added a reusable Qt feedback banner with non-modal messages, an indeterminate progress indicator, auto-dismissed informational/success messages and persistent errors/warnings.

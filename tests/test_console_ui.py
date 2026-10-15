@@ -186,3 +186,19 @@ def test_page_markers_and_clear():
     assert "interrupted" in page.view.toPlainText()
     service.clear_view()
     assert page.view.toPlainText().strip() == "" and not page.visible_text()
+
+
+def test_api_access_filter_hides_only_routine_requests():
+    from morphorum_studio.backend.console import ConsoleEntry
+    from morphorum_studio.ui.console_page import is_api_request_noise
+
+    def log(level, message):
+        return ConsoleEntry(id=10, timestamp="2026-10-13T08:00:00.000+00:00",
+                            level=level, category="api", message=message)
+
+    assert is_api_request_noise(log("info", '127.0.0.1 "GET /api/models HTTP/1.1" 200'))
+    assert is_api_request_noise(log("debug", 'POST /api/jobs 202'))
+    assert not is_api_request_noise(log("error", 'GET /api/jobs failed'))
+    assert not is_api_request_noise(log("info", 'GET /api/jobs 500'))
+    assert not is_api_request_noise(log("warning", 'GET /api/jobs 200 took too long'))
+    assert not is_api_request_noise(log("info", 'Model loaded /api/models'))

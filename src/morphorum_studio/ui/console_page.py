@@ -8,6 +8,7 @@ import re
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
+    QBoxLayout,
     QCheckBox,
     QComboBox,
     QFileDialog,
@@ -91,10 +92,12 @@ class ConsolePage(QWidget):
 
         bar = QVBoxLayout()
         bar.setSpacing(8)
-        filters = QHBoxLayout()
+        filters = QBoxLayout(QBoxLayout.Direction.LeftToRight)
         filters.setSpacing(8)
-        actions = QHBoxLayout()
+        actions = QBoxLayout(QBoxLayout.Direction.LeftToRight)
         actions.setSpacing(8)
+        self.filter_controls = filters
+        self.action_controls = actions
         self.level = QComboBox()
         self.level.addItem("All levels", "debug")
         self.level.addItem("Info and up", "info")
@@ -153,6 +156,14 @@ class ConsolePage(QWidget):
         self.clear_button.clicked.connect(self._service.clear_view)
         self.copy_button.clicked.connect(self._copy)
         self.save_button.clicked.connect(self._save)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        compact = self.width() < 760
+        self.filter_controls.setDirection(QBoxLayout.Direction.TopToBottom if compact
+                                          else QBoxLayout.Direction.LeftToRight)
+        self.action_controls.setDirection(QBoxLayout.Direction.TopToBottom if self.width() < 490
+                                          else QBoxLayout.Direction.LeftToRight)
 
     # -- filtering ------------------------------------------------------------------------
 

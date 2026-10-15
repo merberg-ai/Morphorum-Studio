@@ -69,7 +69,8 @@ class FakeClient:
             assert method == "PUT"
             self.puts.append(copy.deepcopy(body))
             _merge(self.state["settings"], body)
-            return {"status": "saved", **copy.deepcopy(self.state)}, None
+            return {"status": "saved", "settings": copy.deepcopy(self.state["settings"]),
+                    "validation": copy.deepcopy(self.state["validation"])}, None
         if path == "/api/settings/validate-path":
             self.checks.append(body["path"])
             return {"path": body["path"], "exists": True, "is_directory": True, "readable": True}, None

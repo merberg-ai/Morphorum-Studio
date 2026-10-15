@@ -28,6 +28,13 @@
 - Updated the existing backend settings tests for per-path entries and Browse behavior.
 - **Remaining in S5.4a:** application-wide responsive audit (Library, Timeline, Image Lab, Graph, managed backend, other settings), improved Settings information architecture, physical window/scaling acceptance. Do not represent this as completed responsive support.
 
+## S5.4b feedback foundation (in progress)
+
+- Added a reusable Qt feedback banner with non-modal messages, an indeterminate progress indicator, auto-dismissed informational/success messages and persistent errors/warnings.
+- Connected backend configuration load/save/rescan to immediate busy feedback and confirmed results; failures display persistent errors.
+- Added offscreen feedback-state coverage.
+- This is the **first integration**, not an app-wide toast manager yet. Other service-backed pages and operation-level state coverage remain pending.
+
 ## S5.4a follow-on responsive pass
 
 - Library project detail switches from a side-by-side project list and details to a vertical arrangement in narrower windows.

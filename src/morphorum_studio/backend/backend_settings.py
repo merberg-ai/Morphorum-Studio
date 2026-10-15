@@ -190,7 +190,9 @@ class SettingsApi:
         reply, _etag = self.client.send_json("PUT", "/api/settings", update)
         if not isinstance(reply, Mapping) or reply.get("status") != "saved":
             raise BackendError("INVALID_RESPONSE", "The backend did not confirm the save")
-        return parse_settings(reply)
+        # PUT confirms persistence but omits model_families. GET supplies the full schema.
+        # Never mistake this partial successful response for a failed save.
+        return self.load()
 
     def check_path(self, path: str) -> PathCheck:
         reply, _etag = self.client.send_json("POST", "/api/settings/validate-path", {"path": path})

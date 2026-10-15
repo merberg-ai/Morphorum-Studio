@@ -28,6 +28,15 @@
 - Updated the existing backend settings tests for per-path entries and Browse behavior.
 - **Remaining in S5.4a:** application-wide responsive audit (Library, Timeline, Image Lab, Graph, managed backend, other settings), improved Settings information architecture, physical window/scaling acceptance. Do not represent this as completed responsive support.
 
+## S5.4a follow-on responsive pass
+
+- Library project detail switches from a side-by-side project list and details to a vertical arrangement in narrower windows.
+- Image Lab uses a stacked stage/parameter layout in narrower windows instead of a permanently fixed-width parameter dock.
+- Graph moves its inspector below the graph on narrower windows.
+- Settings tabs use clearer Connections / Backend configuration / Studio preferences labels and scrolling under constrained width.
+- Existing backend model-folder controls remain individually editable single-line fields.
+- Further responsive work remains for Timeline, Home, Queue, managed backend and toolbar groupings. Physical Windows resizing acceptance is pending.
+
 ## First implementation slice
 
 The Console now includes Show API requests (off by default), remembers the choice when preferences are available, and separates filters from other actions into two rows. The filter only removes routine debug/info HTTP API access records; 4xx/5xx records and warning/error levels remain visible. Regression tests added. **Do not regard this slice as the whole milestone; CI and physical Windows verification remain pending.**

@@ -188,7 +188,7 @@ Use one coherent branch per fix/feature. CI should pass before integration. Phys
 - merged historical feature branches should be deleted after ancestry verification.
 - `ui-screenshots` is generated CI state, not an app development branch.
 
-The current repository cleanup branch is **`chore/repo-cleanup-20261014`**, created from `dev-ui`, and is documentation/housekeeping only.
+Repository cleanup on 2026-10-14 was prepared on **`chore/repo-cleanup-20261014`** from `dev-ui`. After integration, resume ordinary work from `dev-ui` and remove the temporary cleanup branch.
 
 ## Next work after cleanup
 

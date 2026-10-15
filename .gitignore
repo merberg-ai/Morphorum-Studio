@@ -32,3 +32,6 @@ secrets/
 credentials/
 session/
 cache/
+
+# Studio-managed local Morphorum backend (its data, projects and environment)
+/morphorum-backend/

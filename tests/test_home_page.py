@@ -190,13 +190,44 @@ def test_empty_inventory_and_failures_are_explained():
     assert "AUTH_REQUIRED" in home.model_summary.text()
 
 
+def test_first_run_offers_simple_or_advanced():
+    home, session, service, events = page()
+    chosen = []
+    home.choose_mode.connect(chosen.append)
+    assert home.body.currentIndex() == 0
+    home.simple_button.click()
+    home.advanced_button.click()
+    assert chosen == ["simple", "advanced"]
+
+
+def test_empty_inventory_offers_the_model_folder_setup():
+    routes = default_routes()
+    routes["/api/models"] = {"models": []}
+    routes["/api/models/summary"] = {"total": 0, "counts": {}}
+    home, session, service, events = page(routes)
+    opened = []
+    home.open_backend_settings.connect(lambda: opened.append(1))
+    session.connected(info(), "t")
+    assert not home.models_setup.isHidden()
+    home.models_setup_button.click()
+    assert opened == [1]
+
+
+def test_models_present_hides_the_folder_setup():
+    home, session, service, events = page()
+    session.connected(info(), "t")
+    service.set_active(True)
+    assert home.models_setup.isHidden()
+
+
 def test_no_control_claims_to_load_or_run_a_model():
     home, *_ = page()
     from PySide6.QtWidgets import QPushButton
 
     labels = {b.text().lower() for b in home.findChildren(QPushButton)}
     assert labels == {"open connection settings", "refresh", "new project", "open project",
-                      "generate image"}
+                      "generate image", "run morphorum on this pc", "connect to a backend i already have",
+                      "choose model folders"}
     assert "image generation (s3)" in home.model_footer.text().lower()
 
 
@@ -218,5 +249,15 @@ def test_main_window_wires_home_session_and_polling(tmp_path):
         assert window.dashboard._active
         window.home_page.connect_button.click()
         assert window.navigation.currentRow() == names.index("Settings")
+        window.navigation.setCurrentRow(names.index("Home"))
+        window.home_page.advanced_button.click()
+        assert window.navigation.currentRow() == names.index("Settings")
+        assert window.connection_hub.mode == "advanced"
+        window.navigation.setCurrentRow(names.index("Home"))
+        window.home_page.simple_button.click()
+        assert window.connection_hub.mode == "simple"
+        window.navigation.setCurrentRow(names.index("Home"))
+        window.home_page.open_backend_settings.emit()
+        assert window.settings_page.tabs.currentWidget() is window.backend_settings_page
     finally:
         window.close()

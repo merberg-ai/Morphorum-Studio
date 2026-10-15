@@ -253,6 +253,8 @@ def _label(text: str, name: str, wrap: bool = False) -> QLabel:
 
 class HomePage(QFrame):
     open_connections = Signal()
+    choose_mode = Signal(str)  # 'simple' or 'advanced': open Settings in that connection mode
+    open_backend_settings = Signal()
     new_project = Signal()
     open_library = Signal()
     open_lab = Signal()
@@ -337,6 +339,7 @@ class HomePage(QFrame):
         self.notice = _label("", "notice", wrap=True)
         self.notice.setVisible(False)
         page.addWidget(self.notice)
+        self._page_layout = page
 
         self.body = QStackedWidget()
         page.addWidget(self.body)
@@ -348,13 +351,26 @@ class HomePage(QFrame):
         obox = QVBoxLayout(offline)
         obox.setContentsMargins(24, 22, 24, 24)
         obox.setSpacing(10)
-        obox.addWidget(_label("No backend connected", "cardTitle"))
+        obox.addWidget(_label("Get started: choose how to use Morphorum", "cardTitle"))
         obox.addWidget(_label(
-            "Studio shows live GPU, memory and model information from a Morphorum backend. "
-            "Rendering and models stay on the backend; nothing here needs a local GPU.",
-            "hint", wrap=True))
+            "Studio is the front end. Rendering and models run on a Morphorum backend, which can be on "
+            "this PC or on another computer.", "hint", wrap=True))
+        for attr, title, note, mode in (
+                ("simple_button", "Run Morphorum on this PC",
+                 "Simple. Studio installs, starts and stops the backend for you (Windows).", "simple"),
+                ("advanced_button", "Connect to a backend I already have",
+                 "Advanced. Enter the address of a running Morphorum backend.", "advanced")):
+            choice = QPushButton(title)
+            if mode == "simple":
+                choice.setObjectName("primaryAction")
+            choice.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            choice.setMinimumWidth(260)
+            choice.setAccessibleDescription(note)
+            choice.clicked.connect(lambda _c=False, m=mode: self.choose_mode.emit(m))
+            setattr(self, attr, choice)
+            obox.addWidget(choice, 0, Qt.AlignmentFlag.AlignLeft)
+            obox.addWidget(_label(note, "hint", wrap=True))
         self.connect_button = QPushButton("Open connection settings")
-        self.connect_button.setObjectName("primaryAction")
         self.connect_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.connect_button.clicked.connect(self.open_connections)
         obox.addWidget(self.connect_button, 0, Qt.AlignmentFlag.AlignLeft)
@@ -431,6 +447,19 @@ class HomePage(QFrame):
         head.addWidget(self.family_combo)
         head.addWidget(self.refresh_button)
         mbox.addLayout(head)
+        self.models_setup = QFrame()
+        self.models_setup.setObjectName("notice")
+        sbox2 = QHBoxLayout(self.models_setup)
+        sbox2.setContentsMargins(12, 8, 12, 8)
+        sbox2.addWidget(_label(
+            "No models are indexed yet. Tell the backend which folders hold your checkpoints and LoRAs.",
+            "hint", wrap=True), 1)
+        self.models_setup_button = QPushButton("Choose model folders")
+        self.models_setup_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.models_setup_button.clicked.connect(self.open_backend_settings)
+        sbox2.addWidget(self.models_setup_button)
+        self.models_setup.setVisible(False)
+        mbox.addWidget(self.models_setup)
         self.family_defaults = _label("", "hint", wrap=True)
         mbox.addWidget(self.family_defaults)
         self.model_tree = QTreeWidget()
@@ -560,6 +589,10 @@ class HomePage(QFrame):
         self.recent_note.setText("Loading projects…")
         self.recent_note.setVisible(True)
         self.queue_note.setText("")
+
+    def add_strip(self, widget: QWidget) -> None:
+        """Show a status strip (the local backend) under the page's status line."""
+        self._page_layout.insertWidget(4, widget)
 
     # -- session ------------------------------------------------------------------------
 
@@ -720,6 +753,7 @@ class HomePage(QFrame):
             self.family_combo.setCurrentIndex(max(0, index))
             self.family_combo.blockSignals(False)
 
+        self.models_setup.setVisible(catalog.summary.total == 0)
         labels = {f.id: f.label for f in catalog.families}
         parts = []
         for fam, kinds in catalog.summary.counts.items():

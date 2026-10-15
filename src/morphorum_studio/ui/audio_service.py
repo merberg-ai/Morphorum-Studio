@@ -114,7 +114,7 @@ class AudioService(QObject):
         self.analyzed.emit(analysis, self._wavs.get(analysis.sha256, ""))
 
     def _start(self, operation: str, work, on_result) -> None:
-        client = self._session.client(timeout=120.0) if self.available else None
+        client = self._session.client(timeout=60.0) if self.available else None
         project_id = self._project_id
         if client is None or project_id is None:
             return

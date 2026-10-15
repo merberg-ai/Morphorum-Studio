@@ -23,7 +23,11 @@ from morphorum_studio import __version__
 from morphorum_studio.backend.images import SubmissionJournal
 from morphorum_studio.backend.session import BackendSession
 from morphorum_studio.ui import frameless
+from morphorum_studio.ui.connection_hub import ConnectionHub
 from morphorum_studio.ui.connections_panel import ConnectionsPanel
+from morphorum_studio.ui.managed_backend import ManagedBackend
+from morphorum_studio.ui.managed_status import ManagedStatusChip, ManagedStatusStrip, summary, usable
+from morphorum_studio.ui.managed_panel import ManagedPanel
 from morphorum_studio.ui.dashboard_service import DashboardService
 from morphorum_studio.ui.home_page import HomePage
 from morphorum_studio.ui.image_lab_page import ImageLabPage
@@ -48,6 +52,8 @@ from morphorum_studio.ui.console_page import ConsolePage
 from morphorum_studio.ui.projects_service import ProjectsService
 from morphorum_studio.ui.palette import Command, CommandPalette
 from morphorum_studio.ui.shell import NavRail, TitleBar
+from morphorum_studio.ui.backend_settings_page import BackendSettingsPage
+from morphorum_studio.ui.backend_settings_service import BackendSettingsService
 from morphorum_studio.ui.settings_page import SettingsPage
 from morphorum_studio.ui.startup_settings import StartupSettingsPanel
 
@@ -217,6 +223,7 @@ class StudioMainWindow(QMainWindow):
             self.session,
             Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.CacheLocation))
             / "motion-audio", self)
+        self.managed_backend = ManagedBackend(parent=self)
         self.pages = QStackedWidget()
         self.pages.setObjectName("pages")
         for page_name, title, description in PAGES:
@@ -225,12 +232,18 @@ class StudioMainWindow(QMainWindow):
                 self.home_page.open_connections.connect(
                     self._show_connections
                 )
+                self.home_page.choose_mode.connect(self._show_connection_mode)
+                self.home_page.open_backend_settings.connect(self._show_backend_settings)
                 self.home_page.new_project.connect(self._palette_new_project)
                 self.home_page.open_library.connect(
                     lambda: self.navigation.setCurrentRow(names.index("Projects")))
                 self.home_page.open_lab.connect(
                     lambda: self.navigation.setCurrentRow(names.index("Image Lab")))
                 self.home_page.open_project.connect(self._open_project_from_home)
+                self.managed_strip = ManagedStatusStrip(
+                    self.managed_backend, lambda: self.managed_panel.start(), lambda: self.managed_panel.stop())
+                self.managed_strip.open_settings.connect(self._show_local_backend_settings)
+                self.home_page.add_strip(self.managed_strip)
                 self.pages.addWidget(self.home_page)
             elif page_name == "Projects":
                 self.projects_page = ProjectsPage(
@@ -274,8 +287,16 @@ class StudioMainWindow(QMainWindow):
                     preferences=self.preferences, session=self.session
                 )
                 self.connections_panel.status_changed.connect(self._on_connection_status)
+                self.managed_panel = ManagedPanel(
+                    self.connections_panel, self.managed_backend,
+                    active_jobs=self.queue_service.active_count)
+                self.connection_hub = ConnectionHub(
+                    self.connections_panel, self.managed_panel, self.preferences)
+                self.backend_settings_service = BackendSettingsService(self.session, self)
+                self.backend_settings_page = BackendSettingsPage(self.session, self.backend_settings_service)
+                self.backend_settings_page.models_changed.connect(self._models_rescanned)
                 self.settings_page = SettingsPage(
-                    self.connections_panel, StartupSettingsPanel(self.preferences))
+                    self.connection_hub, StartupSettingsPanel(self.preferences), self.backend_settings_page)
                 self.pages.addWidget(self.settings_page)
             else:
                 self.pages.addWidget(self._make_page(page_name, title, description))
@@ -329,6 +350,9 @@ class StudioMainWindow(QMainWindow):
         footer_layout.setContentsMargins(14, 5, 14, 5)
         footer_layout.setSpacing(18)
         footer_layout.addWidget(_label(f"Studio {__version__}", "footerText"))
+        self.footer_backend = ManagedStatusChip(self.managed_backend)
+        self.footer_backend.clicked.connect(self._show_local_backend_settings)
+        footer_layout.addWidget(self.footer_backend)
         footer_layout.addStretch()
         self.footer_vram = _label("VRAM —", "footerStat")
         self.footer_gpu = _label("GPU —", "footerStat")
@@ -453,6 +477,7 @@ class StudioMainWindow(QMainWindow):
         self.dashboard.latency_updated.connect(self._on_latency)
         self.dashboard.cleared.connect(self._on_session_cleared)
         self.session.changed.connect(self._refresh_host)
+        self.managed_backend.state_changed.connect(lambda _s, _d: self._refresh_host())
         self.render_service.job_updated.connect(self._footer_queue)
         self.render_service.cleared.connect(lambda: self.footer_queue.setText("Queue idle"))
 
@@ -460,7 +485,8 @@ class StudioMainWindow(QMainWindow):
         info = self.session.info
         if info is None or self.session.state == "offline":
             self._latency_ms = None
-            self.title_bar.set_host("")
+            self.title_bar.set_host(f"Local backend · {summary(self.managed_backend)}"
+                                    if usable(self.managed_backend) else "")
             return
         host = info.base_url.split("://", 1)[-1].rstrip("/")
         latency = f" · {self._latency_ms:.0f} ms" if self._latency_ms is not None else ""
@@ -533,6 +559,37 @@ class StudioMainWindow(QMainWindow):
         self.navigation.setCurrentRow([entry[0] for entry in PAGES].index("Settings"))
         self.settings_page.show_connection()
 
+    def managed_startup_wanted(self) -> bool:
+        """True if the backend used last is the Studio-managed one and should be started now."""
+        return self.managed_panel.startup_wanted(self.preferences.profile("last_successful"))
+
+    def begin_managed_startup(self) -> None:
+        self.managed_panel.begin_startup()
+
+    def _models_rescanned(self) -> None:
+        """New models were indexed: refresh every list Studio keeps."""
+        self.dashboard.refresh_now()
+        if hasattr(self, "image_lab_page"):
+            self.image_lab_page.reload_models()
+
+    def _show_connection_mode(self, mode: str) -> None:
+        """First-run choice on Home: open the connection tab in Simple or Advanced mode, and remember it."""
+        self._show_connections()
+        self.connection_hub.set_mode(mode)
+
+    def _show_backend_settings(self) -> None:
+        self.navigation.setCurrentRow([entry[0] for entry in PAGES].index("Settings"))
+        self.settings_page.show_backend_settings()
+
+    def _show_local_backend_settings(self) -> None:
+        self._show_connections()
+        self.connection_hub.set_mode("simple", remember=False)
+
+    def show_startup_failure(self, reason: str) -> None:
+        """The managed backend could not be brought up; show Settings where the reason and Start are."""
+        self._show_connections()
+        self.connection_hub.set_mode("simple", remember=False)
+
     def _show_about(self) -> None:
         QMessageBox.about(
             self,
@@ -567,6 +624,9 @@ class StudioMainWindow(QMainWindow):
         if self.preferences.enabled("restore_geometry", True):
             self.preferences.save_window(self)
         self.preferences.sync()
+        if not self.managed_panel.close_requested():
+            event.ignore()
+            return
         self.console_service.stop()
         self.dashboard.set_active(False)
         self.connections_panel.disconnect()

@@ -38,3 +38,19 @@ Deforum Motion Studio adds "Reveal drift" and "Fly-through". Proposal: add them 
 Studio setting **Audio analysis: Backend (default) / Studio (local)**. Backend uses P1-P4 as they appear. Studio (local)
 computes band envelopes and the spectrum on this PC and sends the envelope in the existing layer format; it needs a numerical
 library bundled with Studio and cannot offer P3 (the pulse compiler is on the backend).
+
+## P7. A scriptable installer (for Studio's managed backend)
+Studio installs the backend by running `scripts/bootstrap.ps1 -InstallDir -Branch -Port` and reading its text output
+(`>>` sections, `[>] [+] [!] [X]` lines). That works today but is coarse. Proposals, none required:
+1. `-NonInteractive`: fail instead of prompting, so a wrapper can never hang on `Read-Host` or a winget confirmation.
+2. `-JsonProgress`: one JSON object per line (`{"stage":"ai-dependencies","index":4,"of":8,"message":"..."}`) so Studio
+   can show a real progress bar instead of a section name.
+3. A stable exit code for each failure class (no space, no network, git missing, port busy) so Studio can explain it.
+(`scripts/update_windows.ps1 -Branch` already exists, so Studio's branch switch in C4 needs no backend change.)
+
+## P8. A capability flag for the settings API
+Studio's Settings > Backend settings uses `GET/PUT /api/settings`, `POST /api/settings/validate-path` and
+`POST /api/models/scan`. They are not advertised in `/api/client/capabilities`, so Studio shows the tab for any connected
+backend and reports a refusal in words. Proposal: add `"settings_api": true` (and `"model_scan": true`) to `features`.
+A client-safe subset would also help: a remote client currently can edit every setting, including `server.allow_lan`
+and `server.access_token`, which Studio deliberately never shows.

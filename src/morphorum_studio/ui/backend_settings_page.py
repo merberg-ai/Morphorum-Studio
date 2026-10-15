@@ -111,8 +111,10 @@ class BackendSettingsPage(QWidget):
             "Folders are on the backend's computer.", "pageDescription"))
         self.status_line = _label("", "connectionDetails")
         self.layout_.addWidget(self.status_line)
-        self.feedback = FeedbackBanner()
-        self.layout_.addWidget(self.feedback)
+        # Floating page overlay, not another card that pushes settings controls down.
+        self.feedback = FeedbackBanner(self)
+        self.feedback.setMinimumWidth(260)
+        self._place_feedback()
         self.form = QWidget()
         self.form_box = QVBoxLayout(self.form)
         self.form_box.setContentsMargins(0, 0, 0, 0)
@@ -140,8 +142,16 @@ class BackendSettingsPage(QWidget):
         self.footer.setLayout(buttons)
         self.layout_.addWidget(self.footer)
 
+    def _place_feedback(self) -> None:
+        available = max(260, self.width() - 28)
+        self.feedback.setFixedWidth(min(460, available))
+        self.feedback.adjustSize()
+        self.feedback.move(max(8, self.width() - self.feedback.width() - 18), 20)
+        self.feedback.raise_()
+
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
+        self._place_feedback()
         direction = (QBoxLayout.Direction.TopToBottom if self.width() < 640
                      else QBoxLayout.Direction.LeftToRight)
         if self.footer_buttons.direction() != direction:
@@ -359,6 +369,7 @@ class BackendSettingsPage(QWidget):
             return
         self.status_line.setText("Saving…")
         self.feedback.notify("Saving backend settings…", busy=True)
+        self._place_feedback()
         self._rescan_after_save = "models" in body or "managed_models" in body
         self._service.save(body)
 
@@ -366,6 +377,7 @@ class BackendSettingsPage(QWidget):
         if self._service.available and not self._service.busy:
             self.status_line.setText("Rescanning models… this can take a while for large folders.")
             self.feedback.notify("Scanning backend model directories…", busy=True)
+            self._place_feedback()
             self._service.rescan()
 
     @property
@@ -383,6 +395,7 @@ class BackendSettingsPage(QWidget):
         self._build_form()
         self.status_line.setText("")
         self.feedback.notify("Backend settings loaded.", kind="success")
+        self._place_feedback()
         self._update()
 
     def _saved(self, data: BackendSettings) -> None:
@@ -395,10 +408,12 @@ class BackendSettingsPage(QWidget):
             self._rescan_after_save = False
             self.status_line.setText(text + " Rescanning models…")
             self.feedback.notify(text + " Rescanning models…", kind="warning" if bad else "info", busy=True)
+            self._place_feedback()
             self._service.rescan()  # the backend only lists models after a scan
         else:
             self.status_line.setText(text)
             self.feedback.notify(text, kind="warning" if bad else "success")
+            self._place_feedback()
         self._update()
 
     def _checked(self, path: str, found: PathCheck) -> None:
@@ -410,11 +425,13 @@ class BackendSettingsPage(QWidget):
         labels = {f.id: f.label for f in self.draft.families} if self.draft is not None else {}
         self.status_line.setText(result.describe(labels))
         self.feedback.notify("Model scan finished. " + result.describe(labels), kind="success")
+        self._place_feedback()
         self.models_changed.emit()
 
     def _failed(self, operation: str, code: str, message: str) -> None:
         self.status_line.setText(f"Could not {'check the folder' if operation == 'check' else operation}: {message}")
         self.feedback.notify(self.status_line.text(), kind="error")
+        self._place_feedback()
         self._update()
 
     def _cleared(self) -> None:

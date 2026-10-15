@@ -32,6 +32,7 @@ from morphorum_studio.backend.backend_settings import (
 )
 from morphorum_studio.backend.session import BackendSession
 from morphorum_studio.ui.backend_settings_service import BackendSettingsService
+from morphorum_studio.ui.feedback import FeedbackBanner
 from morphorum_studio.ui.connections_panel import COLUMN_WIDTH, _FitScroll
 
 KIND_TITLE = {"checkpoints": "checkpoint folders", "loras": "LoRA folders"}
@@ -110,6 +111,8 @@ class BackendSettingsPage(QWidget):
             "Folders are on the backend's computer.", "pageDescription"))
         self.status_line = _label("", "connectionDetails")
         self.layout_.addWidget(self.status_line)
+        self.feedback = FeedbackBanner()
+        self.layout_.addWidget(self.feedback)
         self.form = QWidget()
         self.form_box = QVBoxLayout(self.form)
         self.form_box.setContentsMargins(0, 0, 0, 0)
@@ -355,12 +358,14 @@ class BackendSettingsPage(QWidget):
             self.status_line.setText("Nothing has changed.")
             return
         self.status_line.setText("Saving…")
+        self.feedback.notify("Saving backend settings…", busy=True)
         self._rescan_after_save = "models" in body or "managed_models" in body
         self._service.save(body)
 
     def rescan(self) -> None:
         if self._service.available and not self._service.busy:
             self.status_line.setText("Rescanning models… this can take a while for large folders.")
+            self.feedback.notify("Scanning backend model directories…", busy=True)
             self._service.rescan()
 
     @property
@@ -377,6 +382,7 @@ class BackendSettingsPage(QWidget):
         self._remember_checks(data)
         self._build_form()
         self.status_line.setText("")
+        self.feedback.notify("Backend settings loaded.", kind="success")
         self._update()
 
     def _saved(self, data: BackendSettings) -> None:
@@ -388,9 +394,11 @@ class BackendSettingsPage(QWidget):
         if self._rescan_after_save:
             self._rescan_after_save = False
             self.status_line.setText(text + " Rescanning models…")
+            self.feedback.notify(text + " Rescanning models…", kind="warning" if bad else "info", busy=True)
             self._service.rescan()  # the backend only lists models after a scan
         else:
             self.status_line.setText(text)
+            self.feedback.notify(text, kind="warning" if bad else "success")
         self._update()
 
     def _checked(self, path: str, found: PathCheck) -> None:
@@ -401,6 +409,7 @@ class BackendSettingsPage(QWidget):
     def _scanned(self, result) -> None:
         labels = {f.id: f.label for f in self.draft.families} if self.draft is not None else {}
         self.status_line.setText(result.describe(labels))
+        self.feedback.notify("Model scan finished. " + result.describe(labels), kind="success")
         self.models_changed.emit()
 
     def _failed(self, operation: str, code: str, message: str) -> None:
@@ -412,6 +421,7 @@ class BackendSettingsPage(QWidget):
         self._requested = False
         self._checks = {}
         self._clear_form()
+        self.feedback.hide()
         self._update()
 
     def _session_changed(self) -> None:

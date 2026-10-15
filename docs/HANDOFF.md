@@ -3,12 +3,12 @@
 **Updated: 2026-10-14. Start here in a new chat.**
 - Studio repository: https://github.com/merberg-ai/Morphorum-Studio
 - GPU backend repository: https://github.com/merberg-ai/Morphorum
-- Working Studio branch: **dev-ui**. Its last code merge is **62eb67f** (S5.3 Graph). Documentation commits may advance it; **inspect GitHub before changing code**.
+- Working Studio branch: **dev-ui**. Its last code merge is **6569373** (dev-connections: managed local backend C1-C5 plus Backend settings BS1/BS2, all Windows-tested by the user and CI green on both OSes). Before that, **62eb67f** (S5.3 Graph). Documentation commits may advance it; **inspect GitHub before changing code**.
 - Studio **main** is still the S0 scaffold, SHA **fb5024e7592a6d271a8eeb214fc2470387d2e363**. Do NOT merge it without the user's explicit approval.
 - Backend: **PR #32 (dev-backend to backend main) was merged by the user on 2026-10-14 at 12:51 UTC** (merge commit 0cb5d48; PR head and dev-backend are still 2046d36). Backend main had moved to cd8ddda when checked. Earlier notes below that call the PR "unmerged" are obsolete. Studio was built and tested against dev-backend 2046d36; re-check the API against backend main before relying on newer behaviour.
 - Current phase: **S5 (Motion Lab and Audio Director) is implemented and merged into dev-ui. The user paused work to review the roadmap.** S5.2a and S5.3 have passed CI but have NOT had a physical Windows test; S5.2b is not started.
 
-## RESUME POINT (paused 2026-10-14, to work on a separate feature)
+## RESUME POINT (the separate managed-backend feature is DONE and merged into dev-ui at 6569373; resume the roadmap here)
 
 The user paused the main roadmap to build an unrelated feature while waiting for time to do solid Windows testing. When that feature is finished, resume exactly here. `dev-ui` is clean and fully contains every feature branch; there is no half-finished branch. Start the separate feature on its own branch from `dev-ui` and keep it out of the roadmap work.
 
